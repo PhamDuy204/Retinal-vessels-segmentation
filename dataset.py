@@ -11,10 +11,10 @@ from albumentations.pytorch import ToTensorV2
 
 class CustomDataset(Dataset):
     def __init__(self,root_path,img_transforms=None):
-        self.image_paths =  glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
-                            + glob.glob(root_path + '/images/*.ppm')
-        self.mask_paths = glob.glob(root_path + '/mask/*.png')+glob.glob(root_path + '/mask/*.tif')\
-                            + glob.glob(root_path + '/mask/*.ppm')
+        self.image_paths =  sorted(glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
+                            + glob.glob(root_path + '/images/*.ppm'))
+        self.mask_paths = sorted(glob.glob(root_path + '/mask/*.png')+glob.glob(root_path + '/mask/*.tif')\
+                            + glob.glob(root_path + '/mask/*.ppm')+glob.glob(root_path + '/mask/*.gif'))
 
         self.image_transforms = img_transforms
         self.name = root_path.split('/')[-3]
@@ -26,8 +26,10 @@ class CustomDataset(Dataset):
         image_path = self.image_paths[index]
         mask_path = self.mask_paths[index]
 
-        image = np.array(Image.open(image_path).convert('L').convert('RGB'),dtype=np.uint8)
-        mask = np.ceil(np.array(Image.open(mask_path),dtype=np.uint8)/255).astype(np.uint8)
+        image = np.array(Image.open(image_path).convert('RGB'),dtype=np.uint8)[:,:,1]
+        mask = mask = np.array(Image.open(mask_path),dtype=np.uint8)
+        if (len(mask.shape)==3):mask=mask[:,:,0]
+        mask = np.ceil(mask/255).astype(np.uint8)
         if self.image_transforms:
             t = self.image_transforms(image = image,mask=mask)
             image = t['image']

@@ -3,7 +3,6 @@ from utils import check_model_forward_args
 from torchmetrics.classification import Accuracy,BinaryF1Score,\
                                         AUROC, Recall, Specificity,\
                                         JaccardIndex
-from torchmetrics.segmentation import DiceScore
 from tqdm import tqdm
 def eval_for_seg(model,val_loader,gpu_id):
     torch.cuda.set_device(gpu_id)
@@ -33,5 +32,4 @@ def eval_for_seg(model,val_loader,gpu_id):
             JaccardIndex(task='binary').cuda()(pred_label,truth_label).item(),Recall(task='binary').cuda()(pred_label,truth_label).item(),\
             Specificity(task='binary').cuda()(pred_label,truth_label).item(),\
             AUROC(task='binary').cuda()(probs,truth_label).item(),\
-            DiceScore(num_classes=2).cuda()(pred_label,truth_label).item()
             

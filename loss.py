@@ -7,7 +7,7 @@ class AbeDiceLoss(nn.Module):
         pass
     def forward(self,pred,truth):
         pred=pred.squeeze()
-
+        truth=truth.squeeze()
         # Abe Dice Loss
 
         erc = torch.pow(pred,2*(1-(pred**2)))

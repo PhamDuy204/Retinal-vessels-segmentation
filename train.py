@@ -2,11 +2,16 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import torch
+import torch.nn as nn
 from utils import check_model_forward_args
 from tqdm import tqdm
 from eval import eval_for_seg
 import logging
+from data_preparation import get_all_training_set
 from datetime import datetime
+from torch.multiprocessing import Process, Queue
+from models.unet.unet import UNETModel
+from loss import AbeDiceLoss
 class Trainer:
     def __init__(self,model,train_loader
                  ,val_loader,criterion,optimizer,scheduler,gpu_id,name,save_dir='./checkpoints'):
@@ -21,7 +26,7 @@ class Trainer:
         self.name=name
 
         model_class_name = type(self.model).__name__
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime('%Y%m%d_%H')
         log_filename = f"exp_on_{self.name}_{model_class_name}_{timestamp}.log"
         log_path = os.path.join('./logs', log_filename)
         os.makedirs('./logs', exist_ok=True)
@@ -39,6 +44,10 @@ class Trainer:
         torch.cuda.set_device(self.gpu_id)
         self.model.cuda()
         self.model.train()
+        best_avg = -1.0
+        best_metrics = None
+        best_params=None
+        save_e=0
         for e in range(epochs):
             training_loss=0
             for sample in tqdm(self.train_loader):
@@ -57,10 +66,119 @@ class Trainer:
                 loss.backward()
                 self.optimizer.step()
                 training_loss+=loss.item()
-            self.scheduler.step(training_loss)
-            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id)
-            print(f'Epoch [{e}/{epochs}]: {self.name} has training loss{training_loss},test acc',
-                    acc,f'test_f1 {f1}',f'test_iou {iou}', f'test_sen {recall}',
-                    f'test_spe {spe}',f'test_auc {auc}', f'test_dice {dice}',
-                    )
+            # self.scheduler.step(training_loss)
+            acc,f1,iou,recall,spe,auc=eval_for_seg(self.model,self.val_loader,self.gpu_id)
+            avg_metric = (acc + f1 + iou + recall + spe + auc) / 6
+            self.logger.info(
+                f"[Epoch {e+1}/{epochs}] Dataset: {self.name} | "
+                f"Loss: {training_loss:.4f} | "
+                f"Acc: {acc:.4f} | F1: {f1:.4f} | IoU: {iou:.4f} | "
+                f"Recall: {recall:.4f} | Specificity: {spe:.4f} | "
+            )
+            if avg_metric > best_avg:
+                best_avg = avg_metric
+                best_metrics = (acc, f1, iou, recall, spe, auc)
+                best_params=self.model.state_dict()
+                save_e = e
+        if best_metrics and best_params:
+                os.makedirs(self.save_dir, exist_ok=True)
+                save_path = os.path.join(self.save_dir, f"{self.name}_best.pth")
+                torch.save(best_params, save_path)
+                self.logger.info(f"Saved best model for {self.name} at epoch {save_e}")
+                self.logger.info(f"Best metrics: Acc={best_metrics[0]:.4f}, F1={best_metrics[1]:.4f}, "
+                                f"IoU={best_metrics[2]:.4f}, Recall={best_metrics[3]:.4f}, "
+                                f"Spe={best_metrics[4]:.4f}, AUC={best_metrics[5]:.4f}, "
+                )
+        return best_avg
+datasets = get_all_training_set('./data')  
+def gpu_worker(gpu_id, task_queue, result_queue):
+
+    torch.cuda.set_device(gpu_id)
+    while not task_queue.empty():
+        try:
+            dataset_id = task_queue.get_nowait()
+        except:
+            break
+        info = datasets[dataset_id]
+        train_loader = info['train_loader']
+        val_loader   = info['val_loader']
+        name         = info['name']
+
+        # Khởi tạo model và các thành phần train
+        model = nn.Sequential(UNETModel(1,1),nn.Sigmoid())
+
+        # --- Bạn thay đổi criterion / optimizer / scheduler tùy ý ---
+        criterion = AbeDiceLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=2e-4,weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.2, patience=5
+        )
+        # ----------------------------------------------------------------
+
+        trainer = Trainer(
+            model, train_loader, val_loader,
+            criterion, optimizer, scheduler,
+            gpu_id, name, save_dir='./checkpoints'
+        )
+
+        best_avg = trainer.train(epochs=100)  # bạn có thể điều chỉnh số epochs
+
+        # Đẩy kết quả cuối cùng vào result_queue
+        result_queue.put((name, best_avg))
+
+
+# -------------------- Main --------------------
+if __name__ == '__main__':
+    # Cài đặt bắt buộc khi dùng torch.multiprocessing trên Windows/Linux
+    torch.multiprocessing.set_start_method('spawn')
+
+    # Lấy toàn bộ training sets (danh sách các dict)
+    num_datasets = len(datasets)
+    print((num_datasets))
+
+    # Số GPU (ví dụ = 4)
+    NUM_GPUS = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    NUM_GPUS = min(NUM_GPUS, 4)  # giả sử bạn có tối đa 4 GPU
+    if NUM_GPUS == 0:
+        raise RuntimeError("Không tìm thấy GPU nào, phải chạy trên ít nhất 1 GPU.")
+
+    # Tạo queue chứa các index của dataset
+    task_queue = Queue()
+    for idx in range(num_datasets):
+        task_queue.put(idx)
+
+    # Queue để thu kết quả (name, best_avg)
+    result_queue = Queue()
+
+    # Tạo và start process tương ứng với mỗi GPU
+    processes = []
+    for gpu_id in range(NUM_GPUS):
+        p = Process(target=gpu_worker, args=(gpu_id, task_queue, result_queue))
+        p.start()
+        processes.append(p)
+
+    # Chờ tất cả các process hoàn thành
+    for p in processes:
+        p.join()
+
+    # -------------- Sau khi mọi process đã xong, thu kết quả --------------
+    results = []
+    while not result_queue.empty():
+        try:
+            name, best_avg = result_queue.get_nowait()
+            results.append((name, best_avg))
+        except:
+            break
+
+    # Tìm dataset (mô hình) có best_avg cao nhất
+    if len(results) > 0:
+        # results: list of (name, best_avg)
+        results.sort(key=lambda x: x[1], reverse=True)
+        best_name, best_score = results[0]
+        print("\n\n=========================")
+        print(f"Dataset/mô hình có Eval cao nhất: {best_name} với AvgMetric = {best_score:.4f}")
+        print("=========================")
+    else:
+        print("Không có kết quả nào được trả về từ các process.")
+        
             
