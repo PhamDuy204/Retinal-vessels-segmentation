@@ -12,7 +12,6 @@ import logging
 from data_preparation import get_all_training_set
 from datetime import datetime
 from torch.multiprocessing import Process, Queue
-from models.unet.unet import UNETModel
 from loss import AbeDiceLoss
 from load_model import load_model_class
 
