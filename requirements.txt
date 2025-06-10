@@ -1,0 +1,9 @@
+torch
+torchvision
+albumentations==2.0.8
+scikit-learn
+opencv-python
+matplotlib
+seaborn
+timm
+tqdm
