@@ -1,8 +1,9 @@
 import os
 import sys
+import torch.nn.functional as F
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
-class UNETModel(nn.Module):
+class SegModel(nn.Module):
     def __init__(self, n_channel, n_class):
         super().__init__()
         self.n_channel = n_channel
@@ -34,4 +35,4 @@ class UNETModel(nn.Module):
         x = self.up3(x, x2)
         x = self.up4(x, x1)
 
-        return self.final_conv(x)
+        return F.sigmoid(self.final_conv(x))

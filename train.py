@@ -1,6 +1,8 @@
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import argparse
+from set_up_seed import *
 import torch
 import torch.nn as nn
 from utils import check_model_forward_args
@@ -12,6 +14,17 @@ from datetime import datetime
 from torch.multiprocessing import Process, Queue
 from models.unet.unet import UNETModel
 from loss import AbeDiceLoss
+from load_model import load_model_class
+
+set_seed(42)
+parser = argparse.ArgumentParser(description="Input params")
+parser.add_argument("-b", "--batch_size",type=int, default=1)
+parser.add_argument("-e", "--epochs",type=int, default=100)
+parser.add_argument("-m", "--model",type=str, default='unet')
+args = parser.parse_args()
+datasets = get_all_training_set('./data',args.batch_size)
+
+
 class Trainer:
     def __init__(self,model,train_loader
                  ,val_loader,criterion,optimizer,scheduler,gpu_id,name,save_dir='./checkpoints'):
@@ -89,8 +102,7 @@ class Trainer:
                                 f"IoU={best_metrics[2]:.4f}, Recall={best_metrics[3]:.4f}, "
                                 f"Spe={best_metrics[4]:.4f}, AUC={best_metrics[5]:.4f}, "
                 )
-        return best_avg
-datasets = get_all_training_set('./data')  
+        return best_avg 
 def gpu_worker(gpu_id, task_queue, result_queue):
 
     torch.cuda.set_device(gpu_id)
@@ -103,8 +115,8 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         train_loader = info['train_loader']
         val_loader   = info['val_loader']
         name         = info['name']
-
-        model = nn.Sequential(UNETModel(1,1),nn.Sigmoid())
+        seg_model=load_model_class(args.model)
+        model = seg_model()
 
         criterion = AbeDiceLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3,weight_decay=1e-5)
@@ -119,13 +131,15 @@ def gpu_worker(gpu_id, task_queue, result_queue):
             gpu_id, name, save_dir='./checkpoints'
         )
 
-        best_avg = trainer.train(epochs=100) 
+        best_avg = trainer.train(epochs=args.epochs) 
 
         result_queue.put((name, best_avg))
 
 
 
 if __name__ == '__main__':
+    set_seed(42)
+
     torch.multiprocessing.set_start_method('spawn')
 
     num_datasets = len(datasets)
