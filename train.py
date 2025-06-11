@@ -6,14 +6,17 @@ from set_up_seed import *
 import torch
 import torch.nn as nn
 from utils import check_model_forward_args
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from eval import eval_for_seg
-import logging
-from data_preparation import get_all_training_set
 from datetime import datetime
+import numpy as np
+from data_preparation import get_all_training_set
+
 from torch.multiprocessing import Process, Queue
 from loss import AbeDiceLoss
 from load_model import load_model_class
+import wandb
+wandb.login(key="a5e9e41c35cd5e4b1c8c726d53b6b5700cd55b0d")
 
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
@@ -36,29 +39,20 @@ class Trainer:
         self.gpu_id=gpu_id
         self.save_dir=save_dir
         self.name=name
-
+        self.class_labels = {0: "background", 1: "object"}
         model_class_name = type(self.model).__name__
-        timestamp = datetime.now().strftime('%Y%m%d_%H')
-        log_filename = f"exp_on_{self.name}_{model_class_name}_{timestamp}.log"
-        log_path = os.path.join('./logs', log_filename)
-        os.makedirs('./logs', exist_ok=True)
-
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_path),
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
-        self.logger = logging.getLogger()
+        self.model_name = model_class_name
     def train(self,epochs=100):
         torch.cuda.set_device(self.gpu_id)
         self.model.cuda()
+
+        wandb.watch(self.model, self.criterion, log="all", log_freq=10)
+
         best_avg = -1.0
         best_metrics = None
         best_params=None
         save_e=0
+        current_lr = self.optimizer.param_groups[0]['lr']
         for e in range(epochs):
             self.model.train()
             training_loss=0
@@ -81,26 +75,69 @@ class Trainer:
             self.scheduler.step(training_loss)
             acc,f1,iou,recall,spe,auc=eval_for_seg(self.model,self.val_loader,self.gpu_id)
             avg_metric = (acc + f1 + iou + recall + spe + auc) / 6
-            self.logger.info(
+            print(
                 f"[Epoch {e+1}/{epochs}] Dataset: {self.name} | "
                 f"Loss: {training_loss:.4f} | "
                 f"Acc: {acc:.4f} | F1: {f1:.4f} | IoU: {iou:.4f} | "
                 f"Recall: {recall:.4f} | Specificity: {spe:.4f} | "
             )
+            wandb.log({
+                "epoch": e+1,
+                "loss": training_loss,
+                "val_acc": acc,
+                "val_f1": f1,
+                "val_iou": iou,
+                "val_recall": recall,
+                "val_specificity": spe,
+                "val_auc": auc,
+                "val_avg_metric": avg_metric,
+                "lr": current_lr,
+            })
             if avg_metric > best_avg:
                 best_avg = avg_metric
                 best_metrics = (acc, f1, iou, recall, spe, auc)
                 best_params=self.model.state_dict()
                 save_e = e
         if best_metrics and best_params:
+                best_model=load_model_class(args.model)(1,1)
+                best_model.load_state_dict(best_params)
+                best_model.cuda().eval()
                 os.makedirs(self.save_dir, exist_ok=True)
-                save_path = os.path.join(self.save_dir, f"{self.name}_best.pth")
-                torch.save(best_params, save_path)
-                self.logger.info(f"Saved best model for {self.name} at epoch {save_e}")
-                self.logger.info(f"Best metrics: Acc={best_metrics[0]:.4f}, F1={best_metrics[1]:.4f}, "
-                                f"IoU={best_metrics[2]:.4f}, Recall={best_metrics[3]:.4f}, "
-                                f"Spe={best_metrics[4]:.4f}, AUC={best_metrics[5]:.4f}, "
-                )
+                save_path = os.path.join(self.save_dir, f"{self.model_name}_on_{self.name}_best.onnx")
+                torch.onnx.export(best_model, torch.rand(1,1,512,512).cuda(), save_path, opset_version=11)
+
+                artifact = wandb.Artifact(name=f"{self.model_name}_{self.name}_onnx", type="model")
+                artifact.add_file(save_path)
+                wandb.log_artifact(artifact)
+                wandb.save(save_path)
+                with torch.no_grad():
+                    ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
+                    if check_model_forward_args(self.model)==2:
+                        ex_pred_mask = best_model(ex_image.cuda(),ex_edge.cuda())
+                    else:
+                        ex_pred_mask = best_model(ex_image.cuda())
+                    ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
+                    for i in range(len(ex_image)):
+
+                        masks = { 
+                            "pred": {
+                                "mask_data": ex_pred_mask[i].squeeze().detach().cpu().numpy().astype(int),
+                                "class_labels":  self.class_labels,
+                            },
+                            "true": {
+                                "mask_data": ex_mask[i].squeeze().detach().cpu().numpy().astype(int),
+                                "class_labels":  self.class_labels,
+                            },
+                        }
+                        wandb.log({
+                            f"example_{i}": wandb.Image(
+                                ex_image[i].squeeze().detach().cpu().numpy(),
+                                masks=masks,
+                                caption=f"Example {i}"
+                            )
+                        })
+        wandb.summary["best_avg_metric"] = best_avg
+        wandb.summary["best_epoch"] = save_e
         return best_avg 
 def gpu_worker(gpu_id, task_queue, result_queue):
 
@@ -115,24 +152,43 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         val_loader   = info['val_loader']
         name         = info['name']
         seg_model=load_model_class(args.model)
-        model = seg_model()
+        model = seg_model(1,1)
+        model_class_name = type(model).__name__
+        timestamp = datetime.now().strftime('%Y%m%d_%H')
+        try:
+            wandb.init(
+                    project="Retinal-Segmentation ",
+                    name=f"{name}_GPU{gpu_id}_{timestamp}",
+                    config={
+                        "dataset": name,
+                        "model": model_class_name,
+                        "optimizer": "Adam",
+                        "lr": 1e-3,
+                        "epochs": args.epochs,
+                        "gpu": gpu_id,
+                    },
+                    reinit=True,
+                )
 
-        criterion = AbeDiceLoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3,weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.8, patience=5
-        )
-        # ----------------------------------------------------------------
+            criterion = AbeDiceLoss()
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-3,weight_decay=1e-5)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode='min', factor=0.8, patience=5
+            )
+            # ----------------------------------------------------------------
+            trainer = Trainer(
+                model, train_loader, val_loader,
+                criterion, optimizer, scheduler,
+                gpu_id, name, save_dir='./checkpoints'
+            )
 
-        trainer = Trainer(
-            model, train_loader, val_loader,
-            criterion, optimizer, scheduler,
-            gpu_id, name, save_dir='./checkpoints'
-        )
+            best_avg = trainer.train(epochs=args.epochs) 
 
-        best_avg = trainer.train(epochs=args.epochs) 
-
-        result_queue.put((name, best_avg))
+            result_queue.put((name, best_avg))
+            wandb.finish()
+        except Exception as ex:
+            print(f"[GPU {gpu_id}] train on {name} has error: {ex}")
+            wandb.finish()
 
 
 
