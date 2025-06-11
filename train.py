@@ -121,19 +121,32 @@ class Trainer:
 
                         masks = { 
                             "pred": {
-                                "mask_data": ex_pred_mask[i].squeeze().detach().cpu().numpy().astype(int),
+                                "mask_data": ex_pred_mask[i].squeeze().detach().cpu().numpy().astype(np.uint8),
                                 "class_labels":  self.class_labels,
                             },
                             "true": {
-                                "mask_data": ex_mask[i].squeeze().detach().cpu().numpy().astype(int),
+                                "mask_data": ex_mask[i].squeeze().detach().cpu().numpy().astype(np.uint8),
                                 "class_labels":  self.class_labels,
                             },
                         }
                         wandb.log({
-                            f"example_{i}": wandb.Image(
+                            f"example_{i}_true_mask": wandb.Image(
                                 ex_image[i].squeeze().detach().cpu().numpy(),
-                                masks=masks,
-                                caption=f"Example {i}"
+                                masks=masks["true"],
+                                caption=f"Example {i} true mask"
+                            ),
+                            f"example_{i}_pred_mask": wandb.Image(
+                            ex_image[i].squeeze().detach().cpu().numpy(),
+                                masks=masks["pred"],
+                                caption=f"Example {i} pred mask"
+                            ),
+                            f"pred_mask_of_example_{i}": wandb.Image(
+                                masks=masks["pred"],
+                                caption=f"Pred Mask of Example {i}"
+                            ),
+                            f"pred_mask_of_example_{i}": wandb.Image(
+                                masks=masks["true"],
+                                caption=f"True Mask of Example {i}"
                             )
                         })
         wandb.summary["best_avg_metric"] = best_avg
