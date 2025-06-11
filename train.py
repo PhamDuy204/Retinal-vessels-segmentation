@@ -141,11 +141,11 @@ class Trainer:
                                 caption=f"Example {i} pred mask"
                             ),
                             f"pred_mask_of_example_{i}": wandb.Image(
-                                masks=masks["pred"],
+                                masks["pred"]["mask_data"],
                                 caption=f"Pred Mask of Example {i}"
                             ),
-                            f"pred_mask_of_example_{i}": wandb.Image(
-                                masks=masks["true"],
+                            f"true_mask_of_example_{i}": wandb.Image(
+                                masks["true"]["mask_data"],
                                 caption=f"True Mask of Example {i}"
                             )
                         })
@@ -180,7 +180,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                         "epochs": args.epochs,
                         "gpu": gpu_id,
                     },
-                    reinit=True,
+                    finish_previous=True,
                 )
 
             criterion = AbeDiceLoss()
