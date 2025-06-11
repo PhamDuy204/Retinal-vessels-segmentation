@@ -103,10 +103,10 @@ class Trainer:
                 best_model.load_state_dict(best_params)
                 best_model.cuda().eval()
                 os.makedirs(self.save_dir, exist_ok=True)
-                save_path = os.path.join(self.save_dir, f"{self.model_name}_on_{self.name}_best.onnx")
+                save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.onnx")
                 torch.onnx.export(best_model, torch.rand(1,1,512,512).cuda(), save_path, opset_version=11)
 
-                artifact = wandb.Artifact(name=f"{self.model_name}_{self.name}_onnx", type="model")
+                artifact = wandb.Artifact(name=f"{args.model}_{self.name}_onnx", type="model")
                 artifact.add_file(save_path)
                 wandb.log_artifact(artifact)
                 wandb.save(save_path)
