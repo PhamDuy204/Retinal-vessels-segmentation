@@ -118,35 +118,44 @@ class Trainer:
                         ex_pred_mask = best_model(ex_image.cuda())
                     ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
                     for i in range(len(ex_image)):
+                        image_np = ex_image[i].squeeze().detach().cpu().numpy()
+                        if image_np.max() <= 1.0:
+                            image_np=image_np*0.5+0.5
+                            image_np = (image_np * 255).astype(np.uint8)
+                        else:
+                            image_np = image_np.astype(np.uint8)
 
-                        masks = { 
-                            "pred": {
-                                "mask_data": ex_pred_mask[i].squeeze().detach().cpu().numpy().astype(np.uint8),
-                                "class_labels":  self.class_labels,
-                            },
-                            "true": {
-                                "mask_data": ex_mask[i].squeeze().detach().cpu().numpy().astype(np.uint8),
-                                "class_labels":  self.class_labels,
-                            },
-                        }
+                        pred_mask_np = ex_pred_mask[i].squeeze().detach().cpu().numpy().astype(np.uint8) * 255
+                        true_mask_np = ex_mask[i].squeeze().detach().cpu().numpy().astype(np.uint8) * 255
+
                         wandb.log({
-                            f"example_{i}_true_mask": wandb.Image(
-                                ex_image[i].squeeze().detach().cpu().numpy(),
-                                masks=masks["true"],
-                                caption=f"Example {i} true mask"
+                            f"example_{i}_overlay_true_mask": wandb.Image(
+                                image_np,
+                                masks={
+                                    "true": {
+                                        "mask_data": true_mask_np,
+                                        "class_labels": self.class_labels,
+                                    }
+                                },
+                                caption=f"Example {i} - True Mask"
                             ),
-                            f"example_{i}_pred_mask": wandb.Image(
-                            ex_image[i].squeeze().detach().cpu().numpy(),
-                                masks=masks["pred"],
-                                caption=f"Example {i} pred mask"
+                            f"example_{i}_overlay_pred_mask": wandb.Image(
+                                image_np,
+                                masks={
+                                    "pred": {
+                                        "mask_data": pred_mask_np,
+                                        "class_labels": self.class_labels,
+                                    }
+                                },
+                                caption=f"Example {i} - Pred Mask"
                             ),
-                            f"pred_mask_of_example_{i}": wandb.Image(
-                                masks["pred"]["mask_data"],
-                                caption=f"Pred Mask of Example {i}"
+                            f"example_{i}_true_mask_only": wandb.Image(
+                                true_mask_np,
+                                caption=f"Example {i} - True Mask Only"
                             ),
-                            f"true_mask_of_example_{i}": wandb.Image(
-                                masks["true"]["mask_data"],
-                                caption=f"True Mask of Example {i}"
+                            f"example_{i}_pred_mask_only": wandb.Image(
+                                pred_mask_np,
+                                caption=f"Example {i} - Pred Mask Only"
                             )
                         })
         wandb.summary["best_avg_metric"] = best_avg
@@ -180,7 +189,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                         "epochs": args.epochs,
                         "gpu": gpu_id,
                     },
-                    finish_previous=True,
+                    reinit=True,
                 )
 
             criterion = AbeDiceLoss()
