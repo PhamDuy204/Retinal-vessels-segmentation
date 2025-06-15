@@ -180,7 +180,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         try:
             wandb.init(
                     project="Retinal-Segmentation ",
-                    name=f"{name}_GPU{gpu_id}_{timestamp}",
+                    name=f"{name}_GPU{gpu_id}_Model_{args.model}_{timestamp}",
                     config={
                         "dataset": name,
                         "model": model_class_name,
