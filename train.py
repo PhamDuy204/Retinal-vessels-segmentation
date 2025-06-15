@@ -180,7 +180,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         try:
             wandb.init(
                     # entity='phamdinhanhduy-university-of-information-and-technology',
-                    project="Retinal-Segmentation ",
+                    project="Retinal-Vessels-Segmentation",
                     name=f"{name}_GPU{gpu_id}_Model_{args.model}_{timestamp}",
                     config={
                         "dataset": name,
