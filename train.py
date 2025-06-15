@@ -16,7 +16,7 @@ from torch.multiprocessing import Process, Queue
 from loss import AbeDiceLoss
 from load_model import load_model_class
 import wandb
-wandb.login(key="a5e9e41c35cd5e4b1c8c726d53b6b5700cd55b0d")
+wandb.login()
 
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
