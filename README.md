@@ -41,4 +41,4 @@ python3 train.py --model 'custom_net' --epochs 50
 
 \- Xem kết quả ở project Retinal-Vessels-Segmentation ở trang chủ wandb
 
-![Result](public/Screenshot from 2025-06-16 01-42-31.png)
+![Result](public/Screenshot%20from%202025-06-16%2001-42-31.png)
