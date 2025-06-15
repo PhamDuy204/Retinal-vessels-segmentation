@@ -4,6 +4,13 @@ import torch
 import math
 import torch.nn.functional as F
 import inspect
+from PIL import Image
+
+def convert_gray(image,weigh=np.array([0.299, 0.587, 0.114])):
+    image=image.astype(np.float64)
+    gray_img = image*weigh
+    return np.sum(gray_img,-1)
+
 def sobel_transform(image):
     blur_img=cv2.GaussianBlur(image,(5,5),1)
     sb_x =np.abs(cv2.Sobel(blur_img,-1,1,0))
@@ -19,12 +26,12 @@ def apply_gamma_correction(image, gamma=1.0):
     return gamma_corrected
 
 def preprocessing_img(path):
-    img=cv2.imread(path,0)
-    clahe = cv2.createCLAHE(clipLimit=11)
-    clahe_img = clahe.apply(img)
-    out = apply_gamma_correction(clahe_img,0.55)
-    return cv2.cvtColor(np.array(out).astype(np.uint8),
-                        cv2.COLOR_GRAY2RGB)
+    img=np.array(Image.open(path).convert('RGB'),dtype=np.uint8)
+    gray_img = convert_gray(img).astype(np.uint8)
+    clahe = cv2.createCLAHE(2,(8,8))
+    clahe_img = clahe.apply(gray_img)
+    out = apply_gamma_correction(clahe_img,1.5)
+    return out
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:

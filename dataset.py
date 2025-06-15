@@ -26,7 +26,7 @@ class CustomDataset(Dataset):
         image_path = self.image_paths[index]
         mask_path = self.mask_paths[index]
 
-        image = np.array(Image.open(image_path).convert('RGB'),dtype=np.uint8)[:,:,1]
+        image = preprocessing_img(image_path)
         mask = mask = np.array(Image.open(mask_path),dtype=np.uint8)
         if (len(mask.shape)==3):mask=mask[:,:,0]
         mask = np.ceil(mask/255).astype(np.uint8)
