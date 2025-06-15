@@ -179,6 +179,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         timestamp = datetime.now().strftime('%Y%m%d_%H')
         try:
             wandb.init(
+                    entity='phamdinhanhduy-university-of-information-and-technology',
                     project="Retinal-Segmentation ",
                     name=f"{name}_GPU{gpu_id}_Model_{args.model}_{timestamp}",
                     config={
