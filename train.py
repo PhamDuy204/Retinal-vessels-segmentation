@@ -239,7 +239,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
             criterion = getattr(importlib.import_module('loss'), args.loss)()
             optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,weight_decay=1e-5)
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode='min', factor=0.8, patience=5
+                optimizer, mode='min', factor=0.6, patience=5
             )
             # ----------------------------------------------------------------
             trainer = Trainer(
