@@ -4,7 +4,8 @@ from torchmetrics.classification import Accuracy,BinaryF1Score,\
                                         AUROC, Recall, Specificity,\
                                         JaccardIndex
 from tqdm import tqdm
-def eval_for_seg(model,val_loader,gpu_id):
+import kornia
+def eval_for_seg(model,val_loader,gpu_id,patch=False):
     torch.cuda.set_device(gpu_id)
     with torch.no_grad():
         model.eval()
@@ -12,7 +13,11 @@ def eval_for_seg(model,val_loader,gpu_id):
         truth_label=[]
         pred_label=[]
         for sample in tqdm(val_loader):
-            image,mask,edge=sample.values()
+            if patch==False:
+                image,mask,edge=sample.values()
+                crop_points=None
+            else:
+                image,mask,edge,crop_points=sample.values()
             
             image=image.cuda()
             mask=mask.cuda()
@@ -21,6 +26,10 @@ def eval_for_seg(model,val_loader,gpu_id):
                 prob = model(image,edge)
             else:
                 prob = model(image)
+            if crop_points is not None:
+                crop_points=crop_points.cuda()
+                h,w = mask.shape[-2:]
+                prob=kornia.geometry.transform.crop_and_resize(prob, crop_points, size=(h, w))
             probs.extend(prob.detach().cpu().flatten().numpy().tolist())
             pred_mask = torch.where(prob>0.5,1,0).cpu().flatten()
             truth_label.extend(mask.flatten().tolist())

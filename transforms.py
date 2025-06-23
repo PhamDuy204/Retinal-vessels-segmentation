@@ -9,9 +9,9 @@ def get_train_transforms():
         ToTensorV2()
     ])
 
-def get_test_transforms():
+def get_train_patch_transforms():
     return A.Compose([
-        A.Resize(512,512,interpolation=cv2.INTER_AREA),
         A.Normalize(mean=(0.5),std=(0.5)),
         ToTensorV2()
-    ])    
+    ])
+ 

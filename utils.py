@@ -5,6 +5,7 @@ import math
 import torch.nn.functional as F
 import inspect
 from PIL import Image
+import kornia
 
 def convert_gray(image,weigh=np.array([0.299, 0.587, 0.114])):
     image=image.astype(np.float64)
@@ -58,5 +59,34 @@ def check_model_forward_args(model):
 
     num_params = len(sig.parameters) - 1
     return num_params
+
+def split_patch(image,num_patches=1000,size=64,boxes=None):
+    if len(image.shape)<3:
+        image.unsqueeze(0)
+    H,W=image.shape[-2:]
+    half_size = size//2
+    image =image.type(torch.float32)
+    x = torch.randint(half_size,W-half_size-1,(num_patches,))
+    y = torch.randint(half_size,H-half_size-1,(num_patches,))
+
+    x1 = (x - half_size)
+    y1 = (y - half_size)
+    x2 = (x + half_size)
+    y2 = (y + half_size)
+    if boxes is None :
+        boxes = torch.stack([y1, x1, y2, x1, y2, x2,y1, x2], dim=1).unfold(-1,2,2).type(torch.float32)
+    patches = kornia.geometry.transform.crop_and_resize(image.unsqueeze(0).repeat(num_patches,1,1,1), boxes, size=(size, size))
+    return patches.squeeze(0),boxes
+
+def mirror_padding(image):
+    if len(image.shape)<3:
+        image.unsqueeze(0)
+    H,W=image.shape[-2:]
+    image = F.pad(image,(int(W%2),0,int(H%2),0),mode='reflect')
+    crop_point = torch.tensor([[int(H%2),(int(W%2))],[H-1+int(H%2),(int(W%2))],[H-1+int(H%2),W-1+(int(W%2))],[int(H%2),W-1+(int(W%2))]]).type(torch.float32)
+    return image,crop_point
+
+def count_trainable_params(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
    

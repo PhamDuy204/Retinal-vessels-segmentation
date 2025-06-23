@@ -10,3 +10,4 @@ tqdm
 wandb
 torchmetrics
 onnx
+kornia

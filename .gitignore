@@ -17,3 +17,6 @@ venv/
 
 .vscode/
 
+wandb/
+checkpoints/
+./*.ipynb

@@ -13,8 +13,6 @@ class SegModel(nn.Module):
         
         self.down1 = DownScaling(64, 128)
         self.down2 = DownScaling(128, 256)
-        self.down3 = DownScaling(256, 512)
-        self.up2 = UpScaling(512, 256)
         self.up3 = UpScaling(256, 128)
         self.up4 = UpScaling(128, 64)
 
@@ -24,9 +22,7 @@ class SegModel(nn.Module):
         x1 = self.first_conv(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x = self.up2(x4, x3)
-        x = self.up3(x, x2)
+        x = self.up3(x3, x2)
         x = self.up4(x, x1)
 
         return F.sigmoid(self.final_conv(x))
