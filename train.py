@@ -26,6 +26,7 @@ parser.add_argument("-m", "--model",type=str, default='unet')
 parser.add_argument("-lr", "--learning_rate",type=float, default=1e-4)
 parser.add_argument("-p", "--patches",type=int, default=500)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
+parser.add_argument("-ch", "--chunk_size",type=int, default=None)
 args = parser.parse_args()
 
 datasets = get_all_training_set('./data',args.batch_size,args.patches,args.patch_size)
@@ -79,9 +80,10 @@ class Trainer:
                 image = image.to("cuda", non_blocking=True)
                 mask = mask.to("cuda", non_blocking=True)
                 edge = edge.to("cuda", non_blocking=True)
-
-                chunk_size=min(image.shape[0]//args.batch_size,7*args.batch_size)
-
+                if args.chunk_size is None:
+                    chunk_size=min(image.shape[0]//args.batch_size,8*args.batch_size)
+                else:
+                    chunk_size = args.chunk_size
                 image_chunks=torch.chunk(image,chunk_size)
                 mask_chunks=torch.chunk(mask,chunk_size)
                 edge_chunks=torch.chunk(edge,chunk_size)
