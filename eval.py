@@ -5,40 +5,69 @@ from torchmetrics.classification import Accuracy,BinaryF1Score,\
                                         JaccardIndex
 from tqdm import tqdm
 import kornia
-def eval_for_seg(model,val_loader,gpu_id,patch=False):
+def eval_for_seg(model, val_loader, gpu_id, patch=False):
     torch.cuda.set_device(gpu_id)
-    with torch.no_grad():
-        model.eval()
-        probs= []
-        truth_label=[]
-        pred_label=[]
+    torch.cuda.empty_cache()
+    model.eval()
+
+    # Khởi tạo metrics chạy trên CPU
+    acc_metric    = Accuracy(task='binary').to('cpu')
+    f1_metric     = BinaryF1Score().to('cpu')
+    jaccard_metric= JaccardIndex(task='binary').to('cpu')
+    recall_metric = Recall(task='binary').to('cpu')
+    spec_metric   = Specificity(task='binary').to('cpu')
+    auroc_metric  = AUROC(task='binary').to('cpu')
+
+    with torch.inference_mode():
         for sample in tqdm(val_loader):
-            if patch==False:
-                image,mask,edge=sample.values()
-                crop_points=None
+            # unpack
+            if not patch:
+                image, mask, edge = sample.values()
+                crop_pts = None
             else:
-                image,mask,edge,crop_points=sample.values()
-            
-            image=image.cuda()
-            mask=mask.cuda()
-            edge=edge.cuda()
-            if check_model_forward_args(model)==2:
-                prob = model(image,edge)
+                image, mask, edge, crop_pts = sample.values()
+
+
+            image = image.to(gpu_id, non_blocking=True)
+            mask  = mask.to(gpu_id, non_blocking=True)
+            edge  = edge.to(gpu_id, non_blocking=True)
+
+            # forward
+            if check_model_forward_args(model) == 2:
+                prob = model(image, edge)
             else:
                 prob = model(image)
-            if crop_points is not None:
-                crop_points=crop_points.cuda()
-                h,w = mask.shape[-2:]
-                prob=kornia.geometry.transform.crop_and_resize(prob, crop_points, size=(h, w))
-            probs.extend(prob.detach().cpu().flatten().numpy().tolist())
-            pred_mask = torch.where(prob>0.5,1,0).cpu().flatten()
-            truth_label.extend(mask.flatten().tolist())
-            pred_label.extend(pred_mask.detach().numpy().tolist())
-        truth_label=torch.tensor(truth_label).cuda()
-        pred_label= torch.tensor(pred_label).cuda()
-        probs = torch.tensor(probs).cuda()
-        return Accuracy(task='binary').cuda()(pred_label,truth_label).item(),BinaryF1Score().cuda()(pred_label,truth_label).item(),\
-            JaccardIndex(task='binary').cuda()(pred_label,truth_label).item(),Recall(task='binary').cuda()(pred_label,truth_label).item(),\
-            Specificity(task='binary').cuda()(pred_label,truth_label).item(),\
-            AUROC(task='binary').cuda()(probs,truth_label).item(),\
-            
+
+            # crop nếu cần
+            if patch and crop_pts is not None:
+                h, w = mask.shape[-2:]
+                prob = kornia.geometry.transform.crop_and_resize(
+                    prob, crop_pts.to(gpu_id, non_blocking=True), size=(h, w)
+                )
+
+
+            prob_cpu = prob.squeeze().detach().cpu()
+            mask_cpu = mask.squeeze().detach().cpu()
+
+
+            pred_cpu = (prob_cpu > 0.5).long()
+
+            acc_metric.update(pred_cpu, mask_cpu)
+            f1_metric.update(pred_cpu, mask_cpu)
+            jaccard_metric.update(pred_cpu, mask_cpu)
+            recall_metric.update(pred_cpu, mask_cpu)
+            spec_metric.update(pred_cpu, mask_cpu)
+            auroc_metric.update(prob_cpu, mask_cpu)
+
+            del image, mask, edge, prob
+            torch.cuda.empty_cache()
+
+
+    return (
+        acc_metric.compute().item(),
+        f1_metric.compute().item(),
+        jaccard_metric.compute().item(),
+        recall_metric.compute().item(),
+        spec_metric.compute().item(),
+        auroc_metric.compute().item(),
+    )

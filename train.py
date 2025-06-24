@@ -49,7 +49,7 @@ class Trainer:
         self.patch=patch
     def train(self,epochs=100):
         torch.cuda.set_device(self.gpu_id)
-        self.model.cuda()
+        self.model.to("cuda", non_blocking=True)
 
         wandb.watch(self.model, self.criterion, log="all", log_freq=10)
 
@@ -76,20 +76,28 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                image = image.cuda()
-                mask = mask.cuda()
-                edge = edge.cuda()
+                image = image.to("cuda", non_blocking=True)
+                mask = mask.to("cuda", non_blocking=True)
+                edge = edge.to("cuda", non_blocking=True)
 
-                if check_model_forward_args(self.model)==2:
-                    pred_mask = self.model(image,edge)
-                else:
-                    pred_mask = self.model(image)
-                loss = self.criterion(pred_mask,mask)
+                chunk_size=min(image.shape[0]//args.batch_size,7*args.batch_size)
 
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                training_loss+=loss.item()
+                image_chunks=torch.chunk(image,chunk_size)
+                mask_chunks=torch.chunk(mask,chunk_size)
+                edge_chunks=torch.chunk(edge,chunk_size)
+                for n_image,n_mask,n_egde in zip(
+                    image_chunks,mask_chunks,edge_chunks
+                ):
+                    if check_model_forward_args(self.model)==2:
+                        pred_mask = self.model(n_image,n_egde)
+                    else:
+                        pred_mask = self.model(n_image)
+                    loss = self.criterion(pred_mask,n_mask)
+
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+                    training_loss+=loss.item()
             self.scheduler.step(training_loss)
             acc,f1,iou,recall,spe,auc=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch)
             scores={
@@ -132,12 +140,12 @@ class Trainer:
         if best_metrics and best_params:
                 best_model=load_model_class(args.model)(1,1)
                 best_model.load_state_dict(best_params)
-                best_model.cuda().eval()
+                best_model.to("cuda", non_blocking=True).eval()
                 os.makedirs(self.save_dir, exist_ok=True)
-                save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.onnx")
-                torch.onnx.export(best_model, (torch.rand(1,1,512,512).cuda(),), save_path, opset_version=11)
+                save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
+                torch.save(best_model, save_path)
 
-                artifact = wandb.Artifact(name=f"{args.model}_{self.name}_onnx", type="model")
+                artifact = wandb.Artifact(name=f"{args.model}_{self.name}_pt", type="model")
                 artifact.add_file(save_path)
                 wandb.log_artifact(artifact)
                 wandb.save(save_path)
@@ -148,11 +156,11 @@ class Trainer:
                     else:
                         ex_image,ex_mask,ex_edge,crop_points = next(iter(self.val_loader)).values()
                     if check_model_forward_args(self.model)==2:
-                        ex_pred_mask = best_model(ex_image.cuda(),ex_edge.cuda())
+                        ex_pred_mask = best_model(ex_image.to("cuda", non_blocking=True),ex_edge.to("cuda", non_blocking=True))
                     else:
-                        ex_pred_mask = best_model(ex_image.cuda())
+                        ex_pred_mask = best_model(ex_image.to("cuda", non_blocking=True))
                     if crop_points is not None:
-                        crop_points=crop_points.cuda()
+                        crop_points=crop_points.to("cuda", non_blocking=True)
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=kornia.geometry.transform.crop_and_resize(ex_pred_mask, crop_points, size=(h, w))
                     ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
