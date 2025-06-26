@@ -15,8 +15,6 @@ from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
 from load_model import load_model_class
 import wandb
-wandb.login()
-
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=1)
@@ -27,7 +25,10 @@ parser.add_argument("-lr", "--learning_rate",type=float, default=1e-4)
 parser.add_argument("-p", "--patches",type=int, default=500)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-ch", "--chunk_size",type=int, default=None)
+parser.add_argument("-k", "--key",type=str, default=None)
 args = parser.parse_args()
+
+wandb.login(key=args.key)
 
 datasets = get_all_training_set('./data',args.batch_size,args.patches,args.patch_size)
 
