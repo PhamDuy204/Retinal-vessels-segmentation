@@ -15,7 +15,7 @@ from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
 from load_model import load_model_class
 import wandb
-wandb.login(relogin=True)
+wandb.login()
 
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
