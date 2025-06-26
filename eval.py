@@ -10,12 +10,12 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
     torch.cuda.empty_cache()
     model.eval()
 
-    acc_metric    = Accuracy(task='binary').to('cpu')
-    f1_metric     = BinaryF1Score().to('cpu')
-    jaccard_metric= JaccardIndex(task='binary').to('cpu')
-    recall_metric = Recall(task='binary').to('cpu')
-    spec_metric   = Specificity(task='binary').to('cpu')
-    auroc_metric  = AUROC(task='binary').to('cpu')
+    acc_metric    = Accuracy(task='binary').to('cuda',non_blocking=True)
+    f1_metric     = BinaryF1Score().to('cuda',non_blocking=True)
+    jaccard_metric= JaccardIndex(task='binary').to('cuda',non_blocking=True)
+    recall_metric = Recall(task='binary').to('cuda',non_blocking=True)
+    spec_metric   = Specificity(task='binary').to('cuda',non_blocking=True)
+    auroc_metric  = AUROC(task='binary').to('cuda',non_blocking=True)
 
     with torch.inference_mode():
         for sample in tqdm(val_loader):
@@ -43,8 +43,8 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
                 )
 
 
-            prob_cpu = prob.squeeze().detach().cpu()
-            mask_cpu = mask.squeeze().detach().cpu()
+            prob_cpu = prob.squeeze().detach().to('cuda',non_blocking=True)
+            mask_cpu = mask.squeeze().detach().to('cuda',non_blocking=True)
 
 
             pred_cpu = (prob_cpu > 0.5).long()
