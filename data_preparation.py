@@ -36,8 +36,8 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
             else:
                 all_custom_patch_datasets.append(ConcatDataset([train_set, 
                                                                 CustomTrainDataset(os.path.join(data_paths,name,'test'),train_transforms,with_patches=patches,num_patches=num_patches,patch_size=patch_size)]))
-            train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,pin_memory=True,num_workers=4)
-            val_loader   = DataLoader(val_set, batch_size=batch_size, shuffle=False,pin_memory=True,num_workers=4)
+            train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)
+            val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)
             suffix = '_patches' if patches else ''
             all_train_methods.append({
                 'train_loader': train_loader,
@@ -49,8 +49,8 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
         train_set = ConcatDataset(all_custom_datasets[0:i]+all_custom_datasets[i+1:])
         val_set = all_custom_datasets[i]
         name  = get_name(val_set)[-1]
-        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,pin_memory=True,num_workers=4)
-        val_loader   = DataLoader(val_set, batch_size=batch_size, shuffle=False,pin_memory=True,num_workers=4)
+        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)
+        val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)
 
         all_train_methods.append({
                 'train_loader': train_loader,
@@ -63,8 +63,8 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
         train_set = ConcatDataset(all_custom_patch_datasets[0:i]+all_custom_patch_datasets[i+1:])
         name = get_name(all_custom_patch_datasets[i])[-1]
         val_set =  CustomTestDataset(os.path.join(data_paths,name,'*'),train_transforms) 
-        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,pin_memory=True,num_workers=4)
-        val_loader   = DataLoader(val_set, batch_size=batch_size, shuffle=False,pin_memory=True,num_workers=4)
+        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)
+        val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)
         all_train_methods.append({
                 'train_loader': train_loader,
                 'val_loader': val_loader,
