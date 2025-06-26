@@ -51,7 +51,7 @@ class Trainer:
         self.patch=patch
     def train(self,epochs=100):
         torch.cuda.set_device(self.gpu_id)
-        self.model.to("cuda", non_blocking=True)
+        self.model
 
         wandb.watch(self.model, self.criterion, log="all", log_freq=10)
 
@@ -78,9 +78,9 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                image = image.to("cuda", non_blocking=True)
-                mask = mask.to("cuda", non_blocking=True)
-                edge = edge.to("cuda", non_blocking=True)
+                image = image
+                mask = mask
+                edge = edge
                 if args.chunk_size is None:
                     chunk_size=min(image.shape[0]//args.batch_size,8*args.batch_size)
                 else:
@@ -143,7 +143,7 @@ class Trainer:
         if best_metrics and best_params:
                 best_model=load_model_class(args.model)(1,1)
                 best_model.load_state_dict(best_params)
-                best_model.to("cuda", non_blocking=True).eval()
+                best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
                 save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
                 torch.save(best_model, save_path)
@@ -159,11 +159,11 @@ class Trainer:
                     else:
                         ex_image,ex_mask,ex_edge,crop_points = next(iter(self.val_loader)).values()
                     if check_model_forward_args(self.model)==2:
-                        ex_pred_mask = best_model(ex_image.to("cuda", non_blocking=True),ex_edge.to("cuda", non_blocking=True))
+                        ex_pred_mask = best_model(ex_image,ex_edge)
                     else:
-                        ex_pred_mask = best_model(ex_image.to("cuda", non_blocking=True))
+                        ex_pred_mask = best_model(ex_image)
                     if crop_points is not None:
-                        crop_points=crop_points.to("cuda", non_blocking=True)
+                        crop_points=crop_points
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=kornia.geometry.transform.crop_and_resize(ex_pred_mask, crop_points, size=(h, w))
                     ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)

@@ -20,43 +20,41 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
     with torch.inference_mode():
         for sample in tqdm(val_loader):
             
-            if not patch:
+            if patch==False:
                 image, mask, edge = sample.values()
                 crop_pts = None
             else:
                 image, mask, edge, crop_pts = sample.values()
 
 
-            image = image.to(gpu_id, non_blocking=True)
-            mask  = mask.to(gpu_id, non_blocking=True)
-            edge  = edge.to(gpu_id, non_blocking=True)
+            image = image.cuda()
+            mask  = mask.cuda()
+            edge  = edge.cuda()
 
             if check_model_forward_args(model) == 2:
                 prob = model(image, edge)
             else:
                 prob = model(image)
 
-            if patch and crop_pts is not None:
+            if crop_pts is not None:
                 h, w = mask.shape[-2:]
                 prob = kornia.geometry.transform.crop_and_resize(
-                    prob, crop_pts.to(gpu_id, non_blocking=True), size=(h, w)
+                    prob, crop_pts.cuda(), size=(h, w)
                 )
 
 
-            prob_cpu = prob.squeeze().detach().cuda()
-            mask_cpu = mask.squeeze().detach().cuda()
+            prob= prob.squeeze().detach().cuda().flatten()
+            mask = mask.squeeze().detach().cuda().flatten()
 
 
-            pred_cpu = (prob_cpu > 0.5).long()
+            pred_mask = torch.where(prob>0.5,1,0)
 
-            acc_metric.update(pred_cpu, mask_cpu)
-            f1_metric.update(pred_cpu, mask_cpu)
-            jaccard_metric.update(pred_cpu, mask_cpu)
-            recall_metric.update(pred_cpu, mask_cpu)
-            spec_metric.update(pred_cpu, mask_cpu)
-            auroc_metric.update(prob_cpu, mask_cpu)
-
-            del image, mask, edge, prob
+            acc_metric.update(pred_mask, mask)
+            f1_metric.update(pred_mask, mask)
+            jaccard_metric.update(pred_mask, mask)
+            recall_metric.update(pred_mask, mask)
+            spec_metric.update(pred_mask, mask)
+            auroc_metric.update(prob, mask)
             torch.cuda.empty_cache()
 
 
