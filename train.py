@@ -54,7 +54,7 @@ class Trainer:
         torch.cuda.set_device(self.gpu_id)
         self.model.cuda()
 
-        wandb.watch(self.model, self.criterion, log="all", log_freq=10)
+        wandb.watch(self.model, self.criterion, log="all", log_freq=100)
 
         best_avg = -1.0
         best_eval_score={
