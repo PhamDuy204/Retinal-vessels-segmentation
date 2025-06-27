@@ -55,7 +55,7 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
         all_train_methods.append({
                 'train_loader': train_loader,
                 'val_loader': val_loader,
-                'name': f'val on {name} and train on remaining datasets',
+                'name': f'val_on_{name}_and_train_on_remaining_datasets',
                 'patches': False
             })
     for i in range(len(all_custom_patch_datasets)):
@@ -68,7 +68,7 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
         all_train_methods.append({
                 'train_loader': train_loader,
                 'val_loader': val_loader,
-                'name': f'val on {name} and train on remaining datasets with (patches) ',
+                'name': f'val_on_{name}_and_train_on_remaining_datasets_with_patches',
                 'patches': True
             })
     return all_train_methods
