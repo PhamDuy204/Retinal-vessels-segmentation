@@ -15,6 +15,7 @@ from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
 from load_model import load_model_class
 import wandb
+import math
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=1)
@@ -51,7 +52,7 @@ class Trainer:
         self.patch=patch
     def train(self,epochs=100):
         torch.cuda.set_device(self.gpu_id)
-        self.model
+        self.model.cuda()
 
         wandb.watch(self.model, self.criterion, log="all", log_freq=10)
 
@@ -78,11 +79,12 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                image = image
-                mask = mask
-                edge = edge
+                image = image.cuda()
+                mask = mask.cuda()
+                edge = edge.cuda()
                 if args.chunk_size is None:
-                    chunk_size=min(image.shape[0]//args.batch_size,8*args.batch_size)
+                    print(image.shape[0])
+                    chunk_size=min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size)
                 else:
                     chunk_size = args.chunk_size
                 image_chunks=torch.chunk(image,chunk_size)
@@ -152,20 +154,15 @@ class Trainer:
                 artifact.add_file(save_path)
                 wandb.log_artifact(artifact)
                 wandb.save(save_path)
-                with torch.no_grad():
-                    if self.patch==False:                                                                                                                                                            
-                        ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
-                        crop_points=None
-                    else:
-                        ex_image,ex_mask,ex_edge,crop_points = next(iter(self.val_loader)).values()
+                with torch.no_grad():                                                                                                                                                        
+                    ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
                     if check_model_forward_args(self.model)==2:
                         ex_pred_mask = best_model(ex_image,ex_edge)
                     else:
                         ex_pred_mask = best_model(ex_image)
-                    if crop_points is not None:
-                        crop_points=crop_points
+                    if self.patch:
                         h,w = ex_mask.shape[-2:]
-                        ex_pred_mask=kornia.geometry.transform.crop_and_resize(ex_pred_mask, crop_points, size=(h, w))
+                        ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                     ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
                     for i in range(len(ex_image)):
                         image_np = ex_image[i].squeeze().detach().cpu().numpy()

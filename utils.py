@@ -82,9 +82,8 @@ def mirror_padding(image):
     if len(image.shape)<3:
         image.unsqueeze(0)
     H,W=image.shape[-2:]
-    image = F.pad(image,(int(W%2),0,int(H%2),0),mode='reflect')
-    crop_point = torch.tensor([[int(H%2),(int(W%2))],[H-1+int(H%2),(int(W%2))],[H-1+int(H%2),W-1+(int(W%2))],[int(H%2),W-1+(int(W%2))]]).type(torch.float32)
-    return image,crop_point
+    image = F.pad(image,(0,int(H%2),0,int(W%2)),mode='reflect')
+    return image
 
 def count_trainable_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)

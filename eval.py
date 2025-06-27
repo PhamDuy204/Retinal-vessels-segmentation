@@ -20,13 +20,8 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
     with torch.inference_mode():
         for sample in tqdm(val_loader):
             
-            if patch==False:
-                image, mask, edge = sample.values()
-                crop_pts = None
-            else:
-                image, mask, edge, crop_pts = sample.values()
 
-
+            image, mask, edge = sample.values()
             image = image.cuda()
             mask  = mask.cuda()
             edge  = edge.cuda()
@@ -36,16 +31,15 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
             else:
                 prob = model(image)
 
-            if crop_pts is not None:
+            if patch :
                 h, w = mask.shape[-2:]
-                prob = kornia.geometry.transform.crop_and_resize(
-                    prob, crop_pts.cuda(), size=(h, w)
-                )
+                prob = prob[:,:,:h,:w]
 
 
             prob= prob.squeeze().detach().cuda().flatten()
             mask = mask.squeeze().detach().cuda().flatten()
-
+            # print(mask.dtype)
+            # print(prob.dtype)
 
             pred_mask = torch.where(prob>0.5,1,0)
 

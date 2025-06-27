@@ -25,6 +25,7 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
             patches=True
             train_transforms = get_train_patch_transforms()
         for name in names:
+            if patches and (name=='HRF'):continue
             train_set=CustomTrainDataset(os.path.join(data_paths,name,'training'),train_transforms,with_patches=patches,
                                          num_patches=num_patches,patch_size=patch_size)
             if patches==False:
