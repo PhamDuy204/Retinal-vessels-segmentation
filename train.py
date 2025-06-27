@@ -63,7 +63,8 @@ class Trainer:
             'best_iou' : 0,
             'best_recall' : 0,
             'best_spe' : 0,
-            'best_auc': 0
+            'best_auc': 0,
+            'best_dice': 0
         }
 
         best_metrics = None
@@ -104,26 +105,28 @@ class Trainer:
                     self.optimizer.step()
                     training_loss+=loss.item()
             self.scheduler.step(training_loss)
-            acc,f1,iou,recall,spe,auc=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch)
+            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch)
             scores={
                 'acc':acc,
                 'f1':f1,
                 'iou':iou,
                 'recall':recall,
                 'spe':spe,
-                'auc':auc
+                'auc':auc,
+                'dice':dice
             }
             for best_method in best_eval_score.keys():
                 method = best_method.split('_')[-1]
                 if scores[method]>best_eval_score[best_method]:
                     best_eval_score[best_method]=scores[method]
-            avg_metric = (acc + f1 + iou + recall + spe + auc) / 6
+            avg_metric = (acc + f1 + iou + recall + spe + auc+dice) / 7
             with open("temp.log", "a") as f:
                 f.write(
                     f"[Epoch {e+1}/{epochs}] Dataset: {self.name} | "
                     f"Loss: {training_loss:.4f} | "
                     f"Acc: {acc:.4f} | F1: {f1:.4f} | IoU: {iou:.4f} | "
-                    f"Recall: {recall:.4f} | Specificity: {spe:.4f}\n"
+                    f"Recall: {recall:.4f} | Specificity: {spe:.4f} | "
+                    f"DiceScore: {dice:.4f}\n"
                 )
             wandb.log({
                 "epoch": e+1,
@@ -134,6 +137,7 @@ class Trainer:
                 "val_recall": recall,
                 "val_specificity": spe,
                 "val_auc": auc,
+                "val_dice": dice,
                 "val_avg_metric": avg_metric,
                 "lr": current_lr,
             })

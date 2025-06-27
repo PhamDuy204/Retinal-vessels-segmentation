@@ -3,6 +3,7 @@ from utils import check_model_forward_args
 from torchmetrics.classification import Accuracy,BinaryF1Score,\
                                         AUROC, Recall, Specificity,\
                                         JaccardIndex
+from torchmetrics.segmentation import DiceScore
 from tqdm import tqdm
 import kornia
 def eval_for_seg(model, val_loader, gpu_id, patch=False):
@@ -16,6 +17,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
     recall_metric = Recall(task='binary').cuda()
     spec_metric   = Specificity(task='binary').cuda()
     auroc_metric  = AUROC(task='binary').cuda()
+    dice_metric  = DiceScore(num_classes=2, average='micro').cuda()
 
     with torch.inference_mode():
         for sample in tqdm(val_loader):
@@ -49,6 +51,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
             recall_metric.update(pred_mask, mask)
             spec_metric.update(pred_mask, mask)
             auroc_metric.update(prob, mask)
+            dice_metric.update(pred_mask.long(), mask.long())
             torch.cuda.empty_cache()
 
 
@@ -59,4 +62,5 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
         recall_metric.compute().item(),
         spec_metric.compute().item(),
         auroc_metric.compute().item(),
+        dice_metric.compute().item(),
     )
