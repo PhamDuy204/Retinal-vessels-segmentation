@@ -17,7 +17,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
     recall_metric = Recall(task='binary').cuda()
     spec_metric   = Specificity(task='binary').cuda()
     auroc_metric  = AUROC(task='binary').cuda()
-    dice_metric  = DiceScore(num_classes=2, average='micro').cuda()
+    dice_metric  = DiceScore(num_classes=2, average='macro').cuda()
 
     with torch.inference_mode():
         for sample in tqdm(val_loader):
@@ -51,7 +51,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
             recall_metric.update(pred_mask, mask)
             spec_metric.update(pred_mask, mask)
             auroc_metric.update(prob, mask)
-            dice_metric.update(pred_mask.long(), mask.long())
+            dice_metric.update(pred_mask.unsqueeze(0).unsqueeze(0).long(), mask.unsqueeze(0).unsqueeze(0).long())
             torch.cuda.empty_cache()
 
 
