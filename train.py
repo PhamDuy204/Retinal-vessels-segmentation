@@ -83,7 +83,7 @@ class Trainer:
                 mask = mask.cuda()
                 edge = edge.cuda()
                 if args.chunk_size is None:
-                    print(image.shape[0])
+
                     chunk_size=min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size)
                 else:
                     chunk_size = args.chunk_size
