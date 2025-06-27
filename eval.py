@@ -10,21 +10,21 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
     torch.cuda.empty_cache()
     model.eval()
 
-    acc_metric    = Accuracy(task='binary').cuda()
-    f1_metric     = BinaryF1Score().cuda()
-    jaccard_metric= JaccardIndex(task='binary').cuda()
-    recall_metric = Recall(task='binary').cuda()
-    spec_metric   = Specificity(task='binary').cuda()
-    auroc_metric  = AUROC(task='binary').cuda()
+    acc_metric    = Accuracy(task='binary').to("cuda",non_blocking=True)
+    f1_metric     = BinaryF1Score().to("cuda",non_blocking=True)
+    jaccard_metric= JaccardIndex(task='binary').to("cuda",non_blocking=True)
+    recall_metric = Recall(task='binary').to("cuda",non_blocking=True)
+    spec_metric   = Specificity(task='binary').to("cuda",non_blocking=True)
+    auroc_metric  = AUROC(task='binary').to("cuda",non_blocking=True)
 
     with torch.inference_mode():
         for sample in tqdm(val_loader):
             
 
             image, mask, edge = sample.values()
-            image = image.cuda()
-            mask  = mask.cuda()
-            edge  = edge.cuda()
+            image = image.to("cuda",non_blocking=True)
+            mask  = mask.to("cuda",non_blocking=True)
+            edge  = edge.to("cuda",non_blocking=True)
 
             if check_model_forward_args(model) == 2:
                 prob = model(image, edge)
@@ -36,8 +36,8 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
                 prob = prob[:,:,:h,:w]
 
 
-            prob= prob.squeeze().detach().cuda().flatten()
-            mask = mask.squeeze().detach().cuda().flatten()
+            prob= prob.squeeze().detach().to("cuda",non_blocking=True).flatten()
+            mask = mask.squeeze().detach().to("cuda",non_blocking=True).flatten()
             # print(mask.dtype)
             # print(prob.dtype)
 

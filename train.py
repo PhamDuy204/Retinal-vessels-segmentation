@@ -52,7 +52,7 @@ class Trainer:
         self.patch=patch
     def train(self,epochs=100):
         torch.cuda.set_device(self.gpu_id)
-        self.model.cuda()
+        self.model.to("cuda",non_blocking=True)
 
         wandb.watch(self.model, self.criterion, log="all", log_freq=10)
 
@@ -79,9 +79,9 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                image = image.cuda()
-                mask = mask.cuda()
-                edge = edge.cuda()
+                image = image.to("cuda",non_blocking=True)
+                mask = mask.to("cuda",non_blocking=True)
+                edge = edge.to("cuda",non_blocking=True)
                 if args.chunk_size is None:
 
                     chunk_size=min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size)
