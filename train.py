@@ -13,7 +13,7 @@ from datetime import datetime
 import numpy as np
 from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
-from load_model import load_model_class
+from load_model import load_model_class,load_loss_class
 import wandb
 import math
 set_seed(42)
@@ -248,7 +248,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                     reinit=True,
                 )
 
-            criterion = getattr(importlib.import_module('loss'), args.loss)()
+            criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,weight_decay=1e-5)
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, mode='min', factor=0.6, patience=5
