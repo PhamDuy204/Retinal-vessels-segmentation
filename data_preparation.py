@@ -10,7 +10,7 @@ def get_name(concat_datasets):
         lst_name.append(d.get_name())
     return list(set(lst_name))
 
-def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
+def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,training_type='normal'):
     from transforms import get_train_transforms,get_train_patch_transforms
     names= sorted([d for d in os.listdir(data_paths) if os.path.isdir(os.path.join(data_paths, d))])
     all_custom_train_datasets=[]
@@ -81,7 +81,12 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64):
                 'name': f'val_on_{name}_and_train_on_remaining_datasets_with_patches',
                 'patches': True
             })
-    return all_train_methods
+    if training_type=='all':
+        return all_train_methods
+    elif training_type=='normal':
+        return [method for method in all_train_methods if method['patches']==False]
+    else:
+        return [method for method in all_train_methods if method['patches']==True]
 
 
     

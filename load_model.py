@@ -14,6 +14,6 @@ def load_loss_class(loss_name):
     module = importlib.import_module(module_path)
     name = loss_name.split('_')
     new_name =''
-    for i in range(name):
+    for i in range(len(name)):
         new_name+=name[i][0].upper()+name[i][1:]
     return getattr(module,new_name)

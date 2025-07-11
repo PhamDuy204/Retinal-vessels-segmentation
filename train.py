@@ -25,13 +25,14 @@ parser.add_argument("-m", "--model",type=str, default='unet')
 parser.add_argument("-lr", "--learning_rate",type=float, default=1e-4)
 parser.add_argument("-p", "--patches",type=int, default=500)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
+parser.add_argument("-tt", "--train_type",type=str, default='patch')
 parser.add_argument("-ch", "--chunk_size",type=int, default=None)
 parser.add_argument("-k", "--key",type=str, default=None)
 args = parser.parse_args()
 
 wandb.login(key=args.key)
 
-datasets = get_all_training_set('./data',args.batch_size,args.patches,args.patch_size)
+datasets = get_all_training_set('./data',args.batch_size,args.patches,args.patch_size,args.train_type)
 
 
 class Trainer:
