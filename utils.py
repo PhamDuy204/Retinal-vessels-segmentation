@@ -37,7 +37,7 @@ def preprocessing_img(path):
     img=np.array(Image.open(path).convert('RGB'),dtype=np.uint8)
     r,g,b=img.transpose(2,0,1)
     new_g=cv2.createCLAHE(3,(8,8)).apply(g.astype(np.uint8))
-    new_b=cv2.createCLAHE(2,(5,5)).apply(wiener(b.astype(np.float32),5).clip(0,255).astype(np.uint8))
+    new_b=cv2.createCLAHE(3,(8,8)).apply(wiener(b.astype(np.float32),5).clip(0,255).astype(np.uint8))
     new_img = np.array([r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
     new_img= unsharp_mask(new_img,amount=1.2)
     gray_img = convert_gray(new_img).astype(np.uint8)
