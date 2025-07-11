@@ -148,7 +148,7 @@ class Trainer:
                 best_params=self.model.state_dict()
                 save_e = e
         if best_metrics and best_params:
-                best_model=load_model_class(args.model)(1,1)
+                best_model=load_model_class(args.model)(3,1)
                 best_model.load_state_dict(best_params)
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
@@ -170,7 +170,7 @@ class Trainer:
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                     ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
                     for i in range(len(ex_image)):
-                        image_np = ex_image[i].squeeze().detach().cpu().numpy()
+                        image_np = ex_image[i].squeeze().detach().cpu().numpy().transpose(1,2,0)
                         if image_np.max() <= 1.0:
                             image_np=image_np*0.5+0.5
                             image_np = (image_np * 255).astype(np.uint8)
