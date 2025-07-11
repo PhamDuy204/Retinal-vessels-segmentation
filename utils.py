@@ -8,20 +8,16 @@ from PIL import Image
 import kornia
 from scipy.signal import wiener
 import pywt
+
 def convert_gray(image,weigh=np.array([0.299, 0.587, 0.114])):
     image=image.astype(np.float64)
     gray_img = image*weigh
     return np.sum(gray_img,-1)
-def wavelet_enhance(img, wavelet='haar', level=2, scale=1.3):
-    coeffs = pywt.wavedec2(img, wavelet=wavelet, level=level, axes=(0,1))
-    cA, detail_coeffs = coeffs[0], coeffs[1:]
-    # tăng hệ số chi tiết
-    new_details = []
-    for (cH, cV, cD) in detail_coeffs:
-        new_details.append((cH*scale, cV*scale, cD*scale))
-    new_coeffs = [cA] + new_details
-    rec = pywt.waverec2(new_coeffs, wavelet=wavelet, axes=(0,1))
-    return np.uint8(np.clip(rec, 0, 255))
+
+def unsharp_mask(image, ksize=(5,5), sigma=1.0, amount=1.0):
+    blur = cv2.GaussianBlur(image, ksize, sigma)
+    mask = cv2.subtract(image, blur)
+    return cv2.addWeighted(image, 1.0, mask, amount, 0).clip(0,255)
 
 def sobel_transform(image):
     blur_img=cv2.GaussianBlur(image,(5,5),1)
@@ -29,10 +25,7 @@ def sobel_transform(image):
     sb_y =np.abs(cv2.Sobel(blur_img,-1,0,1))
     sb = (sb_x+sb_y)/2
     return sb
-def unsharp_mask(image, ksize=(5,5), sigma=1.0, amount=1.0):
-    blur = cv2.GaussianBlur(image, ksize, sigma)
-    mask = cv2.subtract(image, blur)
-    return cv2.addWeighted(image, 1.0, mask, amount, 0)
+
 def apply_gamma_correction(image, gamma=1.0):
     image_normalized = image / 255.0
     gamma_corrected = np.power(image_normalized, gamma)
@@ -43,10 +36,15 @@ def apply_gamma_correction(image, gamma=1.0):
 def preprocessing_img(path):
     img=np.array(Image.open(path).convert('RGB'),dtype=np.uint8)
     r,g,b=img.transpose(2,0,1)
-    new_g=cv2.createCLAHE(6,(8,8)).apply(g.astype(np.uint8))
-    new_b=cv2.createCLAHE(5.7,(5,5)).apply(wiener(b.astype(np.float32),5).clip(0,255).astype(np.uint8))
+    new_g=cv2.createCLAHE(3,(8,8)).apply(g.astype(np.uint8))
+    new_b=cv2.createCLAHE(2,(5,5)).apply(wiener(b.astype(np.float32),5).clip(0,255).astype(np.uint8))
     new_img = np.array([r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
-    return unsharp_mask(new_img,amount=1.2)
+    new_img= unsharp_mask(new_img,amount=1.2)
+    gray_img = convert_gray(new_img).astype(np.uint8)
+    clahe = cv2.createCLAHE(2,(8,8))
+    clahe_img = clahe.apply(gray_img)
+    out = apply_gamma_correction(clahe_img,1.2)
+    return out
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:
