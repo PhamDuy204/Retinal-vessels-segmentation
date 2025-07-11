@@ -229,7 +229,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         name         = info['name']
         patch = info['patches']
         seg_model=load_model_class(args.model)
-        model = seg_model(1,1)
+        model = seg_model(3,1)
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
         timestamp = datetime.now().strftime('%Y%m%d_%H')

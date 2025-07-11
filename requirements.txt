@@ -10,4 +10,5 @@ tqdm
 wandb
 torchmetrics
 onnx
+PyWavelets
 kornia
