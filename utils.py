@@ -36,14 +36,11 @@ def apply_gamma_correction(image, gamma=1.0):
 def preprocessing_img(path):
     img=np.array(Image.open(path).convert('RGB'),dtype=np.uint8)
     r,g,b=img.transpose(2,0,1)
-    new_g=cv2.createCLAHE(4,(8,8)).apply(g.astype(np.uint8))
-    new_b=cv2.createCLAHE(3,(8,8)).apply(wiener(b.astype(np.float32),5).clip(0,255).astype(np.uint8))
-    new_img = np.array([r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
-    new_img= unsharp_mask(new_img,amount=1.2)
-    gray_img = convert_gray(new_img).astype(np.uint8)
-    clahe = cv2.createCLAHE(2,(8,8))
-    clahe_img = clahe.apply(gray_img)
-    out = apply_gamma_correction(clahe_img,1.2)
+    new_r=wiener(apply_gamma_correction(r,2).astype(np.uint8).astype(np.float32),12)
+    new_g=cv2.createCLAHE(8,(12,12)).apply(g.astype(np.uint8))
+    new_b=wiener(cv2.createCLAHE(6,(12,12)).apply(b).astype(np.float32),12)
+    new_img = np.array([new_r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
+    out=convert_gray(new_img).clip(0,255).astype(np.uint8)
     return out
 
 def get_small_vessel(mask,kernel=7):
