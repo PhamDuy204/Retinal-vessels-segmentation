@@ -91,7 +91,7 @@ def mirror_padding(image):
     if len(image.shape)<3:
         image.unsqueeze(0)
     H,W=image.shape[-2:]
-    image = F.pad(image,(0,int(H%2),0,int(W%2)),mode='reflect')
+    image = F.pad(image,(0,int(W%2),0,int(H%2)),mode='reflect')
     return image
 
 def count_trainable_params(model):
