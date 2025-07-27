@@ -22,8 +22,8 @@ parser.add_argument("-b", "--batch_size",type=int, default=1)
 parser.add_argument("-e", "--epochs",type=int, default=100)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
-parser.add_argument("-lr", "--learning_rate",type=float, default=1e-4)
-parser.add_argument("-p", "--patches",type=int, default=500)
+parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
+parser.add_argument("-p", "--patches",type=int, default=10000)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-tt", "--train_type",type=str, default='patch')
 parser.add_argument("-ch", "--chunk_size",type=int, default=None)
@@ -105,7 +105,7 @@ class Trainer:
                     loss.backward()
                     self.optimizer.step()
                     training_loss+=loss.item()
-            self.scheduler.step(training_loss)
+            self.scheduler.step()
             acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch)
             scores={
                 'acc':acc,
@@ -251,9 +251,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode='min', factor=0.6, patience=5
-            )
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,
