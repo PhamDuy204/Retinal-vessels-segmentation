@@ -168,6 +168,7 @@ class Trainer:
                     if self.patch:
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
+                        ex_image=ex_image[:,:,:h,:w]
                     ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
                     for i in range(len(ex_image)):
                         image_np = ex_image[i].squeeze().detach().cpu().numpy()
