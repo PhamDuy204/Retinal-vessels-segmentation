@@ -14,9 +14,9 @@ import torch
 import torch.nn as nn 
 import torch.nn.functional as F 
 
-from depthwise import DepthwiseConv
-from dyconv import DynamicConv
-from attention import Attention 
+from .depthwise import DepthwiseConv
+from .dyconv import DynamicConv
+from .attention import Attention 
 
 class EncoderBlock(nn.Module):
     """
@@ -57,8 +57,8 @@ class EncoderBlock(nn.Module):
         super(EncoderBlock, self).__init__() 
 
         # Dual-branch feature extraction
-        self.depthwise = DepthwiseConv(in_channels, kernel_size, padding, stride=1)
-        self.dynamicconv = DynamicConv(in_channels, out_channels, kernel_size, padding=1 if padding != 'same' else 0)
+        self.depthwise = DepthwiseConv(in_channels, kernel_size, padding='same', stride=1)
+        self.dynamicconv = DynamicConv(in_channels, out_channels, kernel_size, padding='same')
         
         # Feature fusion and downsampling
         self.conv1x1 = nn.Conv2d(in_channels + out_channels, out_channels, kernel_size=1, padding=0)

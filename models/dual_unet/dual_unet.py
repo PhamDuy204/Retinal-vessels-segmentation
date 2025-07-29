@@ -1,5 +1,5 @@
 import torch.nn as nn 
-from modules import EncoderBlock, DecoderBlock
+from .modules import EncoderBlock, DecoderBlock
 
 
 class SegModel(nn.Module):
@@ -70,7 +70,7 @@ class SegModel(nn.Module):
 
         # Final Output Layer - Generate segmentation mask
         self.out = nn.Sequential(
-            nn.Conv2d(out_channels, 1, kernel_size=1),  # 64 -> 1 channel segmentation mask
+            nn.Conv2d(out_channels, 1, kernel_size=1, padding='same'),  # 64 -> 1 channel segmentation mask
             nn.Sigmoid()  # Sigmoid activation for binary segmentation (0-1 range)
         )        
 

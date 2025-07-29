@@ -12,7 +12,6 @@ architectures, and serves as one branch of the dual-branch encoder in this U-Net
 
 import torch.nn as nn 
 
-
 class DepthwiseConv(nn.Module):
     """
     Depthwise Separable Convolution Layer.

@@ -27,7 +27,7 @@ Example Output:
 """
 
 import torch 
-from dual_net import SegModel
+from models.dual_unet.dual_unet import SegModel
 
 print("Starting model")
 model = SegModel(3, 1)
