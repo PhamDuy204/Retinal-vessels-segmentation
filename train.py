@@ -149,7 +149,7 @@ class Trainer:
                 save_e = e
         if best_metrics and best_params:
                 best_model=load_model_class(args.model)(1,1)
-                best_model.load_state_dict(best_params)
+                best_model.load_state_dict({k: v.cpu() for k, v in best_params.items()},strict=False)
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
                 save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
