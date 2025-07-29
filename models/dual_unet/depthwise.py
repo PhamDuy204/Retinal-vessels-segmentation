@@ -31,12 +31,13 @@ class DepthwiseConv(nn.Module):
     - Complementary to dynamic convolution in dual-branch architecture
     """
     
-    def __init__(self, in_channels, kernel_size, padding='same', stride=1, bias=False):
+    def __init__(self, in_channels, out_channels, kernel_size, padding='same', stride=1, bias=False):
         """
         Initialize depthwise separable convolution.
         
         Args:
-            in_channels (int): Number of input channels (also determines output channels)
+            in_channels (int): Number of input channels (also determines output channels of depthwise)
+            out_channels (int): Number of output channels of block 
             kernel_size (int): Size of the convolution kernel
             padding (str or int): Padding strategy - 'same' for same output size, 
                                  'valid' for no padding, or integer for specific padding
@@ -63,6 +64,14 @@ class DepthwiseConv(nn.Module):
             bias=bias
         )
 
+        self.pointwise = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels, 
+            kernel_size=1, 
+            padding=padding, 
+            bias=bias 
+        )
+
     def forward(self, X):
         """
         Forward pass through depthwise convolution.
@@ -79,4 +88,7 @@ class DepthwiseConv(nn.Module):
             convolution. Each of the 'in_channels' groups processes one input channel
             with its own set of kernel weights.
         """
-        return self.depthwise(X) 
+        out = self.depthwise(X) 
+        out = self.pointwise(X) 
+
+        return out 
