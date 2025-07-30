@@ -24,6 +24,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
             
 
             image, mask, edge = sample.values()
+            # print(image.shape)
             image = image.cuda()
             mask  = mask.cuda()
             edge  = edge.cuda()

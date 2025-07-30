@@ -22,7 +22,7 @@ parser.add_argument("-b", "--batch_size",type=int, default=1)
 parser.add_argument("-e", "--epochs",type=int, default=100)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
-parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
+parser.add_argument("-lr", "--learning_rate",type=float, default=7e-4)
 parser.add_argument("-p", "--patches",type=int, default=10000)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-tt", "--train_type",type=str, default='patch')
@@ -86,15 +86,15 @@ class Trainer:
                 edge = edge.cuda()
                 if args.chunk_size is None:
 
-                    chunk_size=min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size)
+                    chunk_size=min(math.ceil(image.shape[0]/args.batch_size),math.floor(image.shape[0]/50))
                 else:
                     chunk_size = args.chunk_size
                 image_chunks=torch.chunk(image,chunk_size)
                 mask_chunks=torch.chunk(mask,chunk_size)
                 edge_chunks=torch.chunk(edge,chunk_size)
-                for n_image,n_mask,n_egde in zip(
+                for n_image,n_mask,n_egde in tqdm(zip(
                     image_chunks,mask_chunks,edge_chunks
-                ):
+                )):
                     if check_model_forward_args(self.model)==2:
                         pred_mask = self.model(n_image,n_egde)
                     else:
@@ -148,8 +148,8 @@ class Trainer:
                 best_params=self.model.state_dict()
                 save_e = e
         if best_metrics and best_params:
-                best_model=load_model_class(args.model)(1,1)
-                best_model.load_state_dict({k: v.cpu() for k, v in best_params.items()},strict=False)
+                best_model=load_model_class(args.model)(1,1).cuda()
+                best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
                 save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
@@ -161,14 +161,17 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
+                    ex_image=ex_image.cuda()
+                    ex_edge=ex_edge.cuda()
+                    ex_mask=ex_mask.cuda()
                     if check_model_forward_args(self.model)==2:
                         ex_pred_mask = best_model(ex_image,ex_edge)
                     else:
                         ex_pred_mask = best_model(ex_image)
                     if self.patch:
                         h,w = ex_mask.shape[-2:]
-                        ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
+                        ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                     ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
                     for i in range(len(ex_image)):
                         image_np = ex_image[i].squeeze().detach().cpu().numpy()
