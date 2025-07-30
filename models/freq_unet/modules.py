@@ -6,7 +6,8 @@ import math
 import torch.nn.functional as F
 import os
 import sys
-sys.path.append('/'.join(os.path.dirname(__file__).split('/')[:-3]))
+sys.path.extend(['/'.join(os.path.dirname(__file__).split('/')[:])])
+sys.path.extend(['/'.join(os.path.dirname(__file__).split('/')[:-2])])
 from utils import *
 class DeformableConv2d(nn.Module):
     def __init__(self,

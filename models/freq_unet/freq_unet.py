@@ -1,11 +1,12 @@
 import sys
 import os
 import torch
+sys.path.extend(['/'.join(os.path.dirname(__file__).split('/')[:])])
 import torch.nn as nn
 import torch.nn.functional as F
 from modules import *
 from pytorch_wavelets import DWTForward
-sys.path.append('/'.join(os.path.dirname(__file__).split('/')[:-3]))
+sys.path.extend(['/'.join(os.path.dirname(__file__).split('/')[:-2])])
 from utils import *
 class SegModel(nn.Module):
     def __init__(self,
