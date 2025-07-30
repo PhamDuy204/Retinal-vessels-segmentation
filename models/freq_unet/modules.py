@@ -4,6 +4,9 @@ from torch import nn
 from mamba_ssm import Mamba2
 import math
 import torch.nn.functional as F
+import os
+import sys
+sys.path.append('/'.join(os.path.dirname(__file__).split('/')[:-3]))
 from utils import *
 class DeformableConv2d(nn.Module):
     def __init__(self,
