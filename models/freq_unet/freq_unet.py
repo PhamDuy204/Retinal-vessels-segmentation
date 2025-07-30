@@ -42,8 +42,8 @@ class SegModel(nn.Module):
 
         #out
         self.out = nn.Sequential(
-            DepthwiseConv(256,out_channels),
-            nn.Upsample(scale_factor=2),
+            LeakyBlock(256,256),
+            nn.ConvTranspose2d(256,out_channels,4,2,1),
             nn.Sigmoid()
         )
         self.dwt=DWTForward(J=1, mode='zero', wave='haar')
