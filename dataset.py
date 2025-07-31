@@ -83,7 +83,7 @@ class CustomTestDataset(Dataset):
             image = t['image']
             mask  = t['mask']
 
-            image=mirror_padding(image)
+            image=mirror_padding_v2(image)
             edge = ToTensorV2()(image=sobel_transform(image.clone().detach().cpu().numpy().transpose(1,2,0)))['image']
         else:
             raise Exception('img_transforms is compulsory for dataset class')

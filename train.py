@@ -81,9 +81,6 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                image = image.cuda()
-                mask = mask.cuda()
-                edge = edge.cuda()
                 if args.chunk_size is None:
 
                     chunk_size=min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size)
@@ -95,6 +92,9 @@ class Trainer:
                 for n_image,n_mask,n_egde in zip(
                     image_chunks,mask_chunks,edge_chunks
                 ):
+                    n_image = n_image.cuda()
+                    n_mask = n_mask.cuda()
+                    n_egde = n_egde.cuda()
                     if check_model_forward_args(self.model)==2:
                         pred_mask = self.model(n_image,n_egde)
                     else:
@@ -148,8 +148,8 @@ class Trainer:
                 best_params=self.model.state_dict()
                 save_e = e
         if best_metrics and best_params:
-                best_model=load_model_class(args.model)(1,1)
-                best_model.load_state_dict({k: v.cpu() for k, v in best_params.items()},strict=False)
+                best_model=load_model_class(args.model)(1,1).cuda()
+                best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
                 save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
@@ -161,6 +161,9 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
+                    ex_image=ex_image.cuda()
+                    ex_mask=ex_mask.cuda()
+                    ex_edge=ex_edge.cuda()
                     if check_model_forward_args(self.model)==2:
                         ex_pred_mask = best_model(ex_image,ex_edge)
                     else:
