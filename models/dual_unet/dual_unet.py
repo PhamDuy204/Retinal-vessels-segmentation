@@ -23,13 +23,13 @@ class SegModel(nn.Module):
     - Flexible channel scaling throughout the network
     """
     
-    def __init__(self, in_channels=3, out_channels=64): 
+    def __init__(self, in_channels=1, num_class=1): 
         """
         Initialize the Dual-Branch U-Net model.
         
         Args:
             in_channels (int): Number of input channels (default: 3 for RGB images)
-            out_channels (int): Base number of output channels for feature maps (default: 64)
+            num_class (int): Base number of output classes
                                This value is scaled throughout the network:
                                - Encoder: 64 -> 128 -> 256 -> 512 -> 1024
                                - Decoder: 512 -> 256 -> 128 -> 64
@@ -53,24 +53,24 @@ class SegModel(nn.Module):
 
         # Encoder Path - Dual-branch feature extraction with progressive downsampling
         # Each encoder block combines depthwise separable convolution and dynamic convolution
-        self.down1 = EncoderBlock(in_channels, out_channels)          # 3 -> 64,   spatial: H/2 x W/2
-        self.down2 = EncoderBlock(out_channels, out_channels * 2)     # 64 -> 128, spatial: H/4 x W/4
-        self.down3 = EncoderBlock(out_channels * 2, out_channels * 4) # 128 -> 256, spatial: H/8 x W/8
-        self.down4 = EncoderBlock(out_channels * 4, out_channels * 8) # 256 -> 512, spatial: H/16 x W/16
+        self.down1 = EncoderBlock(in_channels, 64)          # 3 -> 64,   spatial: H/2 x W/2
+        self.down2 = EncoderBlock(64, 128)     # 64 -> 128, spatial: H/4 x W/4
+        self.down3 = EncoderBlock(128, 256) # 128 -> 256, spatial: H/8 x W/8
+        self.down4 = EncoderBlock(256, 512) # 256 -> 512, spatial: H/16 x W/16
 
         # Bottleneck - Deepest feature representation
-        self.bottle_neck = EncoderBlock(out_channels * 8, out_channels * 16) # 512 -> 1024, spatial: H/32 x W/32
+        self.bottle_neck = EncoderBlock(512, 1024) # 512 -> 1024, spatial: H/32 x W/32
 
         # Decoder Path - Attention-guided feature fusion with progressive upsampling
         # Each decoder block uses attention mechanism to fuse encoder features with upsampled features
-        self.up1 = DecoderBlock(out_channels * 8, out_channels * 8)   # 512 + 1024 -> 512, spatial: H/16 x W/16
-        self.up2 = DecoderBlock(out_channels * 4, out_channels * 4)   # 256 + 512 -> 256,  spatial: H/8 x W/8
-        self.up3 = DecoderBlock(out_channels * 2, out_channels * 2)   # 128 + 256 -> 128,  spatial: H/4 x W/4
-        self.up4 = DecoderBlock(out_channels, out_channels)           # 64 + 128 -> 64,    spatial: H/2 x W/2
+        self.up1 = DecoderBlock(1024 + 512, 512)   # 512 + 1024 -> 512, spatial: H/16 x W/16
+        self.up2 = DecoderBlock(256 + 512, 256)   # 256 + 512 -> 256,  spatial: H/8 x W/8
+        self.up3 = DecoderBlock(128 + 512, 128)   # 128 + 256 -> 128,  spatial: H/4 x W/4
+        self.up4 = DecoderBlock(64 + 128, 64)           # 64 + 128 -> 64,    spatial: H/2 x W/2
 
         # Final Output Layer - Generate segmentation mask
         self.out = nn.Sequential(
-            nn.Conv2d(out_channels, 1, kernel_size=1, padding='same'),  # 64 -> 1 channel segmentation mask
+            nn.Conv2d(64, 1, kernel_size=1, padding='same'),  # 64 -> 1 channel segmentation mask
             nn.Sigmoid()  # Sigmoid activation for binary segmentation (0-1 range)
         )        
 

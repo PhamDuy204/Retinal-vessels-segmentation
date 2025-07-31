@@ -18,8 +18,8 @@ class DepthwiseConv(nn.Module):
     
     Performs spatial convolution independently for each input channel using grouped
     convolution with groups=in_channels. This reduces parameters from:
-    - Standard conv: in_channels × out_channels × kernel_size²
-    - Depthwise conv: in_channels × kernel_size² (when out_channels = in_channels)
+    - Standard conv: in_channels * out_channels * kernel_size**2
+    - Depthwise conv: in_channels * kernel_size**2 (when out_channels = in_channels)
     
     This implementation maintains the input channel count (out_channels = in_channels)
     and focuses on spatial feature extraction rather than channel mixing.
@@ -45,7 +45,7 @@ class DepthwiseConv(nn.Module):
             bias (bool): Whether to include bias parameters (default: False)
             
         Architecture:
-            Input -> Depthwise Conv (groups=in_channels) -> Output
+            Input -> Depthwise Conv (groups=in_channels) -> Pointwise Conv (kernel_size=1) -> Output
             
         Note: Output channels equal input channels since groups=in_channels.
               For channel mixing, this would typically be followed by a pointwise

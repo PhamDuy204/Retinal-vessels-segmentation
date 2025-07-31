@@ -46,7 +46,7 @@ class EncoderBlock(nn.Module):
             in_channels (int): Number of input feature channels
             out_channels (int): Number of output feature channels after dual-branch processing
             kernel_size (int): Convolution kernel size (default: 3)
-            padding (str): Padding type - 'same' or 'valid' (default: 'same')
+            padding (str): Padding type - (default: 'same')
             
         Components:
             - depthwise: Depthwise separable convolution (efficient spatial processing)
@@ -57,12 +57,17 @@ class EncoderBlock(nn.Module):
         super(EncoderBlock, self).__init__() 
 
         # Dual-branch feature extraction
-        self.depthwise = DepthwiseConv(in_channels, kernel_size, padding='same', stride=1)
+        self.depthwise = DepthwiseConv(in_channels, out_channels, kernel_size, padding='same', stride=1)
         self.dynamicconv = DynamicConv(in_channels, out_channels, kernel_size, padding='same')
         
         # Feature fusion and downsampling
-        self.conv1x1 = nn.Conv2d(in_channels + out_channels, out_channels, kernel_size=1, padding=0)
-        self.down = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1)
+        self.conv1x1 = nn.Conv2d(out_channels*2, out_channels, kernel_size=1, padding='same') # Fusion before downsampling and also is the output of skip connection
+        self.down = nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=0), 
+                nn.BatchNorm2d(num_features=out_channels), 
+                nn.ReLU(inplace=True)
+        )
+
 
     def forward(self, X):
         """
@@ -105,7 +110,7 @@ class EncoderBlock(nn.Module):
         # Generate downsampled features for next encoder level
         out = self.down(fused)                # Shape: (N, out_channels, H//2, W//2)
         
-        return out, fused  # (downsampled, skip_connection) 
+        return out, fused  # (downsampled, skip_connection or attention) 
     
 
 
@@ -146,6 +151,7 @@ class DecoderBlock(nn.Module):
         super(DecoderBlock, self).__init__()
 
         self.batchnorm = nn.BatchNorm2d(num_features=in_channels)
+        self.relu = nn.ReLU()
         self.attention = Attention(in_channels, out_channels)
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
         self.out_channels = out_channels
@@ -160,9 +166,7 @@ class DecoderBlock(nn.Module):
             x1 (torch.Tensor): Encoder skip connection features
                               Shape: (batch_size, in_channels, height, width)
             x2 (torch.Tensor): Features from deeper decoder level
-                              Shape: (batch_size, channels, height//2, width//2)
-                              
-        Returns:
+                                    Shape: (batch_size, channels, height//2, width//2)Q
             torch.Tensor: Fused and processed features
                          Shape: (batch_size, out_channels, height, width)
                          
