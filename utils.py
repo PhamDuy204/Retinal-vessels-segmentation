@@ -88,10 +88,23 @@ def split_patch(image,num_patches=1000,size=64,boxes=None):
     return patches.squeeze(0),boxes
 
 def mirror_padding(image):
+    # alway convert to even shape
     if len(image.shape)<3:
         image.unsqueeze(0)
     H,W=image.shape[-2:]
     image = F.pad(image,(0,int(W%2),0,int(H%2)),mode='reflect')
+    return image
+
+def mirror_padding_v2(image):
+    # alway convert to 2^n*k shape
+    shapes=np.array([16,32,64,128,224,448,512,640,768,896,1024,1152])
+    if len(image.shape)<3:
+        image.unsqueeze(0)
+    H,W=image.shape[-2:]
+    new_h_shape=shapes[shapes>=H][0]
+    new_w_shape=shapes[shapes>=W][0]
+
+    image = F.pad(image,(0,new_w_shape-W,0,new_h_shape-H),mode='reflect')
     return image
 
 def count_trainable_params(model):
