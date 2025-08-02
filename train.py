@@ -286,7 +286,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max((args.epochs//15),5)*len(train_loader))
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max((args.epochs//15),5)*len(train_loader),eta_min=2e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,
