@@ -168,41 +168,42 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
-                    B,C,H,W = ex_image.shape           
+                    # B,C,H,W = ex_image.shape           
                     ex_image=ex_image.cuda()
                     ex_mask=ex_mask.cuda()
                     ex_edge=ex_edge.cuda()
-                    if self.patch:
-                        # ex_image = window_partition(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
-                        # ex_edge = window_partition(ex_edge.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
-                        ex_image = kornia.contrib.extract_tensor_patches(ex_image, args.patch_size, args.patch_size//4).flatten(0,1)
-                        ex_edge = kornia.contrib.extract_tensor_patches(ex_edge, args.patch_size, args.patch_size//4).flatten(0,1)
-                    chunk_size = max(ex_image.shape[0]//500,1)
-                    chunk_image = torch.chunk(ex_image,chunk_size,0)
-                    chunk_edge = torch.chunk(ex_edge,chunk_size,0)
-                    out_sample=[]
-                    for chunk in zip(chunk_image,chunk_edge):
-                        c_image,c_edge=chunk
-                        if check_model_forward_args(best_model) == 2:
-                            prob = best_model(c_image, c_edge)
-                        else:
-                            prob = best_model(c_image)
-                        out_sample.append(prob)
-                    ex_pred_mask= torch.cat(out_sample,0)
+                    # if self.patch:
+                    #     # ex_image = window_partition(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
+                    #     # ex_edge = window_partition(ex_edge.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
+                    #     ex_image = kornia.contrib.extract_tensor_patches(ex_image, args.patch_size, args.patch_size//4).flatten(0,1)
+                    #     ex_edge = kornia.contrib.extract_tensor_patches(ex_edge, args.patch_size, args.patch_size//4).flatten(0,1)
+                    # chunk_size = max(ex_image.shape[0]//500,1)
+                    # chunk_image = torch.chunk(ex_image,chunk_size,0)
+                    # chunk_edge = torch.chunk(ex_edge,chunk_size,0)
+                    # out_sample=[]
+                    # for chunk in zip(chunk_image,chunk_edge):
+                    #     c_image,c_edge=chunk
+                    if check_model_forward_args(best_model) == 2:
+                        ex_pred_mask = best_model(ex_image, ex_edge)
+                    else:
+                        ex_pred_mask = best_model(ex_image)
+                    #     out_sample.append(prob)
+                    # ex_pred_mask= torch.cat(out_sample,0)
                     # if check_model_forward_args(self.model)==2:
                     #     ex_pred_mask = best_model(ex_image,ex_edge)
                     # else:
                     #     ex_pred_mask = best_model(ex_image)
                     if self.patch:
-                        ex_pred_mask = kornia.contrib.combine_tensor_patches(ex_pred_mask.view(B,-1,1,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
-                        ex_image = kornia.contrib.combine_tensor_patches(ex_image.view(B,-1,C,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
+                        # ex_pred_mask = kornia.contrib.combine_tensor_patches(ex_pred_mask.view(B,-1,1,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
+                        # ex_image = kornia.contrib.combine_tensor_patches(ex_image.view(B,-1,C,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
                         # ex_pred_mask=window_reverse(ex_pred_mask.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
                         # ex_image=window_reverse(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
                         
                         h,w = ex_mask.shape[-2:]
                         ex_image=ex_image[:,:,:h,:w]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
-                    ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
+                        ex_image=ex_image[:,:,:h,:w]
+                    ex_pred_mask=torch.where(ex_pred_mask>0.47,1,0)
                     for i in range(len(ex_image)):
                         image_np = ex_image[i].squeeze().detach().cpu().numpy()
                         if image_np.max() <= 1.0:
