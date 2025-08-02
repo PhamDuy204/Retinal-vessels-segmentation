@@ -84,7 +84,7 @@ class Trainer:
                     edge=edge.flatten(0,1)
                 if args.chunk_size is None:
 
-                    chunk_size=min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size)
+                    chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),math.floor(image.shape[0]/50)),1)
                 else:
                     chunk_size = args.chunk_size
                 image_chunks=torch.chunk(image,chunk_size)
