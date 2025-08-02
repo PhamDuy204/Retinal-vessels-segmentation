@@ -73,7 +73,7 @@ class Trainer:
         best_metrics = None
         best_params=None
         save_e=0
-        current_lr = self.optimizer.param_groups[0]['lr']
+        current_lr = None
         for e in range(epochs):
             self.model.train()
             training_loss=0
@@ -102,12 +102,12 @@ class Trainer:
                     else:
                         pred_mask = self.model(n_image)
                     loss = self.criterion(pred_mask,n_mask)
-
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
                     training_loss+=loss.item()
-            self.scheduler.step()
+                self.scheduler.step()
+            current_lr = self.optimizer.param_groups[0]['lr']
             acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch,args.patch_size)
             scores={
                 'acc':acc,
@@ -286,7 +286,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max((args.epochs//15),5)*len(train_loader))
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,
