@@ -5,8 +5,9 @@ from torchmetrics.classification import Accuracy,BinaryF1Score,\
                                         JaccardIndex
 from torchmetrics.segmentation import DiceScore
 from tqdm import tqdm
-import kornia
-def eval_for_seg(model, val_loader, gpu_id, patch=False):
+from timm.models.maxxvit import window_partition,window_reverse
+
+def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64):
     torch.cuda.set_device(gpu_id)
     torch.cuda.empty_cache()
     model.eval()
@@ -24,16 +25,20 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False):
             
 
             image, mask, edge = sample.values()
+            H,W = image.shape[-2:]
+            if patch:
+                image = window_partition(image.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
+                edge = window_partition(edge.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
             image = image.cuda()
             mask  = mask.cuda()
-            edge  = edge.cuda()
-
+            edge  = edge.cuda() 
             if check_model_forward_args(model) == 2:
                 prob = model(image, edge)
             else:
                 prob = model(image)
 
             if patch :
+                prob=window_reverse(prob.permute(0,2,3,1).contiguous(),[patch_size,patch_size],[H,W]).permute(0,3,1,2).contiguous()
                 h, w = mask.shape[-2:]
                 prob = prob[:,:,:h,:w]
 
