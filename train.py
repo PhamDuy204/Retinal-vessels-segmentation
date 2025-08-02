@@ -91,9 +91,9 @@ class Trainer:
                 image_chunks=torch.chunk(image,chunk_size)
                 mask_chunks=torch.chunk(mask,chunk_size)
                 edge_chunks=torch.chunk(edge,chunk_size)
-                for n_image,n_mask,n_egde in tqdm(zip(
+                for n_image,n_mask,n_egde in zip(
                     image_chunks,mask_chunks,edge_chunks
-                )):
+                ):
                     n_image = n_image.cuda()
                     n_mask = n_mask.cuda()
                     n_egde = n_egde.cuda()
