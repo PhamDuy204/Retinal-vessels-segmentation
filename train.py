@@ -15,6 +15,7 @@ from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
 from load_model import load_model_class,load_loss_class
 import wandb
+from timm.models.maxxvit import window_partition,window_reverse
 import math
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
@@ -106,7 +107,7 @@ class Trainer:
                     self.optimizer.step()
                     training_loss+=loss.item()
             self.scheduler.step()
-            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch)
+            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch,args.patch_size)
             scores={
                 'acc':acc,
                 'f1':f1,
@@ -149,6 +150,9 @@ class Trainer:
                 save_e = e
         if best_metrics and best_params:
                 best_model=load_model_class(args.model)(1,1).cuda()
+                if self.patch:
+                    _=best_model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
+                best_model.zero_grad()
                 best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
                 best_model=load_model_class(args.model)(1,1).cuda()
                 best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
@@ -163,6 +167,10 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
+                    H,W = ex_image.shape[-2:]
+                    if self.patch:
+                        ex_image = window_partition(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
+                        ex_edge = window_partition(ex_edge.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
                     ex_image=ex_image.cuda()
                     ex_mask=ex_mask.cuda()
                     ex_edge=ex_edge.cuda()
@@ -174,6 +182,8 @@ class Trainer:
                     else:
                         ex_pred_mask = best_model(ex_image)
                     if self.patch:
+                        ex_pred_mask=window_reverse(ex_pred_mask.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
+                        ex_image=window_reverse(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
                         h,w = ex_mask.shape[-2:]
                         ex_image=ex_image[:,:,:h,:w]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
@@ -239,6 +249,9 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         patch = info['patches']
         seg_model=load_model_class(args.model)
         model = seg_model(1,1)
+        if patch:
+            _=model(torch.rand(1,1,args.patch_size,args.patch_size))
+        model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
         timestamp = datetime.now().strftime('%Y%m%d_%H')
