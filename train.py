@@ -15,7 +15,9 @@ from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
 from load_model import load_model_class,load_loss_class
 import wandb
+from timm.models.maxxvit import window_partition,window_reverse
 import math
+import kornia
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=1)
@@ -23,7 +25,7 @@ parser.add_argument("-e", "--epochs",type=int, default=100)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
 parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
-parser.add_argument("-p", "--patches",type=int, default=10000)
+parser.add_argument("-p", "--patches",type=int, default=500)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-tt", "--train_type",type=str, default='patch')
 parser.add_argument("-ch", "--chunk_size",type=int, default=None)
@@ -71,7 +73,7 @@ class Trainer:
         best_metrics = None
         best_params=None
         save_e=0
-        current_lr = self.optimizer.param_groups[0]['lr']
+        current_lr = None
         for e in range(epochs):
             self.model.train()
             training_loss=0
@@ -83,7 +85,7 @@ class Trainer:
                     edge=edge.flatten(0,1)
                 if args.chunk_size is None:
 
-                    chunk_size=min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size)
+                    chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size),1)
                 else:
                     chunk_size = args.chunk_size
                 image_chunks=torch.chunk(image,chunk_size)
@@ -100,13 +102,13 @@ class Trainer:
                     else:
                         pred_mask = self.model(n_image)
                     loss = self.criterion(pred_mask,n_mask)
-
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
                     training_loss+=loss.item()
-            self.scheduler.step()
-            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch)
+                self.scheduler.step()
+            current_lr = self.optimizer.param_groups[0]['lr']
+            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch,args.patch_size)
             scores={
                 'acc':acc,
                 'f1':f1,
@@ -149,6 +151,9 @@ class Trainer:
                 save_e = e
         if best_metrics and best_params:
                 best_model=load_model_class(args.model)(1,1).cuda()
+                if self.patch:
+                    _=best_model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
+                best_model.zero_grad()
                 best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
@@ -161,14 +166,37 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
+                    B,C,H,W = ex_image.shape           
                     ex_image=ex_image.cuda()
                     ex_mask=ex_mask.cuda()
                     ex_edge=ex_edge.cuda()
-                    if check_model_forward_args(self.model)==2:
-                        ex_pred_mask = best_model(ex_image,ex_edge)
-                    else:
-                        ex_pred_mask = best_model(ex_image)
                     if self.patch:
+                        # ex_image = window_partition(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
+                        # ex_edge = window_partition(ex_edge.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
+                        ex_image = kornia.contrib.extract_tensor_patches(ex_image, args.patch_size, args.patch_size//4).flatten(0,1)
+                        ex_edge = kornia.contrib.extract_tensor_patches(ex_edge, args.patch_size, args.patch_size//4).flatten(0,1)
+                    chunk_size = max(ex_image.shape[0]//500,1)
+                    chunk_image = torch.chunk(ex_image,chunk_size,0)
+                    chunk_edge = torch.chunk(ex_edge,chunk_size,0)
+                    out_sample=[]
+                    for chunk in zip(chunk_image,chunk_edge):
+                        c_image,c_edge=chunk
+                        if check_model_forward_args(best_model) == 2:
+                            prob = best_model(c_image, c_edge)
+                        else:
+                            prob = best_model(c_image)
+                        out_sample.append(prob)
+                    ex_pred_mask= torch.cat(out_sample,0)
+                    # if check_model_forward_args(self.model)==2:
+                    #     ex_pred_mask = best_model(ex_image,ex_edge)
+                    # else:
+                    #     ex_pred_mask = best_model(ex_image)
+                    if self.patch:
+                        ex_pred_mask = kornia.contrib.combine_tensor_patches(ex_pred_mask.view(B,-1,1,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
+                        ex_image = kornia.contrib.combine_tensor_patches(ex_image.view(B,-1,C,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
+                        # ex_pred_mask=window_reverse(ex_pred_mask.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
+                        # ex_image=window_reverse(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
+                        
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
@@ -234,6 +262,9 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         patch = info['patches']
         seg_model=load_model_class(args.model)
         model = seg_model(1,1)
+        if patch:
+            _=model(torch.rand(1,1,args.patch_size,args.patch_size))
+        model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
         timestamp = datetime.now().strftime('%Y%m%d_%H')
@@ -255,7 +286,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max((args.epochs//15),5)*len(train_loader),eta_min=2e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,

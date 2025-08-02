@@ -97,7 +97,7 @@ def mirror_padding(image):
 
 def mirror_padding_v2(image):
     # alway convert to 2^n*k shape
-    shapes=np.array([16,32,64,128,224,448,512,640,768,896,1024,1152])
+    shapes=np.array([448,512,640,768,896,1024,1152])
     if len(image.shape)<3:
         image.unsqueeze(0)
     H,W=image.shape[-2:]
