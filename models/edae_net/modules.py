@@ -23,7 +23,6 @@ class GAP_conv(nn.Module):
     def forward(self,x):
         return x*self.feature(x)
 
-x = torch.rand(2,3,5,5)
 
 
 
@@ -82,10 +81,11 @@ class MDAE(nn.Module):
 class MAC(nn.Module):
     def __init__(self,in_channel):
         super().__init__()
-        self.b1 = nn.Conv2d(in_channel,in_channel,3,dilation=1,padding='same',bias=True,groups = in_channel)
-        self.b2 = nn.Conv2d(in_channel,in_channel,3,dilation=3,padding='same',bias=True,groups = in_channel)
-        self.b3 = nn.Conv2d(in_channel,in_channel,3,dilation=5,padding='same',bias=True,groups = in_channel)
-        self.norm = nn.BatchNorm2d(in_channel)
+        self.b1 = nn.Conv2d(in_channel,in_channel,3,dilation=1,padding='same',bias=False,groups = in_channel)
+        self.b2 = nn.Conv2d(in_channel,in_channel,3,dilation=3,padding='same',bias=False,groups = in_channel)
+        self.b3 = nn.Conv2d(in_channel,in_channel,3,dilation=5,padding='same',bias=False,groups = in_channel)
+        self.norm =   nn.GroupNorm(in_channel,in_channel,affine=False)
+
     def forward(self,x):
         return self.norm(x + self.b1(x)+self.b2(x)+self.b3(x))
 
@@ -99,7 +99,7 @@ class CPSE(nn.Module):
             MAC(in_channel=in_channel),
             MAC(in_channel=in_channel),
         )
-        self.norm = nn.BatchNorm2d(in_channel)
+        self.norm = nn.GroupNorm(in_channel,in_channel,affine=False)
 
     def forward(self,x):
         b,c,h,w =  x.shape
@@ -116,10 +116,10 @@ class DGF(nn.Module):
     def __init__(self,in_channel_high,in_channel_low,out_channel = 64):
         super().__init__()
 
-        self.low_feature = nn.Conv2d(in_channel_low,out_channel,3,padding='same',bias=True) # b,64,h,w
+        self.low_feature = nn.Conv2d(in_channel_low,out_channel,3,padding='same',bias=False) # b,64,h,w
         self.high_feature = nn.Sequential(
-            nn.ConvTranspose2d(in_channel_high,in_channel_high,2,stride=2,bias=True), # b,64,h,w
-            nn.Conv2d(in_channel_high,out_channel,3,padding='same',bias=True)
+            nn.ConvTranspose2d(in_channel_high,in_channel_high,2,stride=2,bias=False), # b,64,h,w
+            nn.Conv2d(in_channel_high,out_channel,3,padding='same',bias=False)
         )
         self.feature_concat = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
@@ -127,7 +127,8 @@ class DGF(nn.Module):
             nn.Sigmoid(),
 
         )
-        self.norm = nn.BatchNorm2d(out_channel*2)
+        self.norm =  nn.GroupNorm(out_channel*2,out_channel*2,affine=False)
+
 
     def forward(self,x_high_level,x_low_level):
         '''
@@ -163,7 +164,6 @@ class AWL(nn.Module):
         alpha,beta,gamma=torch.chunk(sum,3,dim=1)
         return self.out(torch.cat((x1+alpha*x1,x2+beta*x2,x3+gamma*x3),1))
 
-AWL(in_channel=3)(torch.rand(2,1,32,32),torch.rand(2,1,32,32),torch.rand(2,1,32,32)).shape
 
 """# MODEL
 
@@ -174,12 +174,12 @@ class convolution(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
         self.out = nn.Sequential(
-            nn.Conv2d(in_channel,out_channel,3,padding='same',bias=True),
-            nn.BatchNorm2d(out_channel),
+            nn.Conv2d(in_channel,out_channel,3,padding='same',bias=False),
+            nn.GroupNorm(out_channel,out_channel,affine=False),
             nn.ReLU(),
 
-            nn.Conv2d(out_channel,out_channel,3,padding='same',bias=True,groups = out_channel),
-            nn.BatchNorm2d(out_channel),
+            nn.Conv2d(out_channel,out_channel,3,padding='same',bias=False,groups = out_channel),
+            nn.GroupNorm(out_channel,out_channel,affine=False),
             nn.ReLU(),
         )
     def forward(self,x):
@@ -189,25 +189,26 @@ class change_feature_size_x4(nn.Module):
     def __init__(self,in_channel,out_channel=1):
         super().__init__()
         self.out = nn.Sequential(
-            nn.ConvTranspose2d(in_channel,64,4,stride=2,padding=1,bias=True),
+            nn.ConvTranspose2d(in_channel,64,4,stride=2,padding=1,bias=False),
             nn.ReLU(),
-            nn.ConvTranspose2d(64,1,4,stride=2,padding=1,bias=True),
+            nn.ConvTranspose2d(64,1,4,stride=2,padding=1,bias=False),
         )
-        self.norm = nn.BatchNorm2d(1)
+        self.norm = nn.GroupNorm(1,1,affine=False)
+
     def forward(self,x):
         return self.norm(self.out(x))
 
 class change_feature_size_x2(nn.Module):
-    def __init__(self,in_channel,out_channel):
+    def __init__(self,in_channel,out_channel=1):
         super().__init__()
         self.out = nn.Sequential(
-            nn.ConvTranspose2d(in_channel,64,4,stride=2,padding=1,bias=True),
+            nn.ConvTranspose2d(in_channel,64,4,stride=2,padding=1,bias=False),
             nn.ReLU(),
-            nn.Conv2d(64,1,3,padding='same',bias=True),
+            nn.Conv2d(64,1,3,padding='same',bias=False),
 
             # nn.ConvTranspose2d(64,1,4,stride=2,padding=1,bias=False),
         )
-        self.norm = nn.BatchNorm2d(1)
+        self.norm = nn.GroupNorm(1,1,affine=False)
 
     def forward(self,x):
         return self.norm(self.out(x))
@@ -216,20 +217,17 @@ class change_feature_size_x1(nn.Module):
     def __init__(self,in_channel,out_channel=1):
         super().__init__()
         self.out = nn.Sequential(
-            nn.Conv2d(in_channel,64,3,padding='same',bias=True),
+            nn.Conv2d(in_channel,64,3,padding='same',bias=False),
             nn.ReLU(),
             nn.Conv2d(64,1,1),
 
             # nn.ConvTranspose2d(64,1,4,stride=2,padding=1,bias=False),
         )
-        self.norm = nn.BatchNorm2d(1)
+        self.norm = nn.GroupNorm(1,1,affine=False)
 
     def forward(self,x):
         return self.norm(self.out(x))
 
-from torch.nn import functional as F
-
-"""## EDAE"""
 
 
 

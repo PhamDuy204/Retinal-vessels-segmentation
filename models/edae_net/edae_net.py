@@ -17,13 +17,13 @@ class SegModel(nn.Module):
 
         self.conv1 = convolution(n_channel,64) #b,64,64,64
 
-        self.down1 = nn.Conv2d(64,64,kernel_size=4,stride=2,padding=1,bias=True) #b,64,32,32
+        self.down1 = nn.Conv2d(64,64,kernel_size=4,stride=2,padding=1,bias=False) #b,64,32,32
 
         self.conv2 = convolution(64,128)    #b,128,32,32
-        self.down2 = nn.Conv2d(128,128,kernel_size=4,stride=2,padding=1,bias=True) #b,128,16,16
+        self.down2 = nn.Conv2d(128,128,kernel_size=4,stride=2,padding=1,bias=False) #b,128,16,16
 
         self.conv3 = convolution(128,256)   #b,256,16,16
-        self.down3 = nn.Conv2d(256,256,kernel_size=4,stride=2,padding=1,bias=True) #b,256,8,8
+        self.down3 = nn.Conv2d(256,256,kernel_size=4,stride=2,padding=1,bias=False) #b,256,8,8
 
         self.bottle_neck = CPSE(256) #b,256,8,8
 
