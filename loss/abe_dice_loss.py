@@ -6,11 +6,9 @@ class AbeDiceLoss(nn.Module):
         super().__init__()
         pass
     def forward(self,pred,truth):
-        pred=pred.squeeze()
-        truth=truth.squeeze()
+        pred=pred.squeeze().float()
+        truth=truth.squeeze().float()
         # Abe Dice Loss
-
         erc = torch.pow(pred,2*(1-(pred**2)))
         abe_diceloss_all = 1-(torch.sum(2*erc*truth)/torch.sum(erc**2 +truth))
-
         return abe_diceloss_all
