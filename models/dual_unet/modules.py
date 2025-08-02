@@ -11,6 +11,7 @@ for improved feature fusion and segmentation performance.
 """
 
 import torch 
+import numpy as np 
 import torch.nn as nn 
 import torch.nn.functional as F 
 
@@ -46,7 +47,7 @@ class EncoderBlock(nn.Module):
             in_channels (int): Number of input feature channels
             out_channels (int): Number of output feature channels after dual-branch processing
             kernel_size (int): Convolution kernel size (default: 3)
-            padding (str): Padding type - (default: 'same')
+            padding (str): Padding value - (default: 'same')
             
         Components:
             - depthwise: Depthwise separable convolution (efficient spatial processing)
@@ -57,15 +58,15 @@ class EncoderBlock(nn.Module):
         super(EncoderBlock, self).__init__() 
 
         # Dual-branch feature extraction
-        self.depthwise = DepthwiseConv(in_channels, out_channels, kernel_size, padding='same', stride=1)
-        self.dynamicconv = DynamicConv(in_channels, out_channels, kernel_size, padding='same')
+        self.depthwise = DepthwiseConv(in_channels, out_channels, kernel_size, padding=padding, stride=1)
+        self.dynamicconv = DynamicConv(in_channels, out_channels, kernel_size, padding=padding)
         
         # Feature fusion and downsampling
         self.conv1x1 = nn.Conv2d(out_channels*2, out_channels, kernel_size=1, padding='same') # Fusion before downsampling and also is the output of skip connection
         self.down = nn.Sequential(
-                nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=0), 
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1),  # Fix: padding=1 for proper spatial preservation
                 nn.BatchNorm2d(num_features=out_channels), 
-                nn.ReLU(inplace=True)
+                nn.ReLU()
         )
 
 
@@ -93,13 +94,16 @@ class EncoderBlock(nn.Module):
             5. Downsampling for next encoder level
         """
         # Dual-branch feature extraction
-        depthwise_out = self.depthwise(X)     # Shape: (N, in_channels, H, W)
+        depthwise_out = self.depthwise(X)     # Shape: (N, out_channels, H, W)  # Fixed comment
         dyconv_out = self.dynamicconv(X)      # Shape: (N, out_channels, H, W)
-        
-        # Ensure spatial dimensions match before concatenation
-        if depthwise_out.shape[2:] != dyconv_out.shape[2:]:
-            depthwise_out = F.interpolate(depthwise_out, size=dyconv_out.shape[2:], 
-                                        mode='bilinear', align_corners=False)
+
+        # Ensure H, W of the two feature map 
+        if depthwise_out.shape[2:] != dyconv_out.shape[2:]: 
+            delta_height = np.abs(depthwise_out.size()[2] - dyconv_out.size()[2])
+            delta_width = np.abs(depthwise_out.size()[3] - dyconv_out.size()[3])
+
+            dyconv_out = F.pad(dyconv_out, [delta_width // 2, delta_width - delta_width // 2, 
+                            delta_height // 2, delta_height - delta_height // 2])
 
         # Concatenate dual-branch outputs along channel dimension
         combined = torch.cat((depthwise_out, dyconv_out), dim=1)  # Shape: (N, in_channels + out_channels, H, W)
@@ -152,7 +156,7 @@ class DecoderBlock(nn.Module):
 
         self.batchnorm = nn.BatchNorm2d(num_features=in_channels)
         self.relu = nn.ReLU()
-        self.attention = Attention(in_channels, out_channels)
+        # self.attention = Attention(in_channels*2, out_channels)
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
         self.out_channels = out_channels
 
@@ -187,15 +191,22 @@ class DecoderBlock(nn.Module):
 
         # Apply attention mechanism for feature selection and fusion
         # Attention takes original x2 and handles its own upsampling internally
-        attn_map = self.attention(x1, x2)
+        # attn_map = self.attention(x1, x2)
 
         # Ensure spatial dimension alignment between attention output and upsampled features
-        if upsampled_x2.shape[2:] != attn_map.shape[2:]:
-            upsampled_x2 = F.interpolate(upsampled_x2, size=attn_map.shape[2:], 
-                                        mode='bilinear', align_corners=False)
+        # if upsampled_x2.shape[2:] != x1.shape[2:]:
+        #     upsampled_x2 = F.interpolate(upsampled_x2, size=x1.shape[2:], 
+        #                                 mode='bilinear', align_corners=False)
+        
+        if upsampled_x2.shape[2:] != x1.shape[2:]:
+            delta_height = np.abs(upsampled_x2.size()[2] - x1.size()[2])
+            delta_width = np.abs(upsampled_x2.size()[3] - x1.size()[3])
+
+            upsampled_x2 = F.pad(upsampled_x2, [delta_width // 2, delta_width -  delta_width //2, 
+                                                delta_height // 2, delta_height - delta_height // 2])  
 
         # Concatenate attention-weighted features with upsampled features
-        concat = torch.cat([attn_map, upsampled_x2], dim=1)
+        concat = torch.cat([x1, upsampled_x2], dim=1)
 
         # Create convolution layers dynamically based on actual concatenated dimensions
         # This flexibility is needed because attention mechanism may change channel dimensions

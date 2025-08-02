@@ -2,10 +2,12 @@ import os
 import sys
 import torch.nn.functional as F
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from modules import *
+
 class SegModel(nn.Module):
     def __init__(self, n_channel, n_class):
-        super().__init__()
+        super(SegModel, self).__init__()
         self.n_channel = n_channel
         self.n_class = n_class
 
@@ -22,6 +24,7 @@ class SegModel(nn.Module):
         self.up4 = UpScaling(128, 64)
 
         self.final_conv = OutConv(64, n_class)
+        self.sigmoid = nn.Sigmoid() 
 
     def forward(self, x):
         x1 = self.first_conv(x)
@@ -35,4 +38,4 @@ class SegModel(nn.Module):
         x = self.up3(x, x2)
         x = self.up4(x, x1)
 
-        return F.sigmoid(self.final_conv(x))
+        return self.sigmoid(self.final_conv(x)) 

@@ -1,17 +1,5 @@
 """
 Dynamic Convolution Module
-
-This module implements dynamic convolution, which adaptively selects and combines
-multiple convolution kernels based on input content. Unlike standard convolution
-that uses fixed kernels, dynamic convolution uses an attention mechanism to
-weight different kernels, allowing the model to adapt its processing based on
-the input characteristics.
-
-Key Components:
-- AttentionBlock: Generates attention weights for kernel selection
-- DynamicConv: Performs convolution with dynamically weighted kernels
-
-This serves as the adaptive branch in the dual-branch encoder architecture.
 """
 
 import torch 
@@ -22,17 +10,6 @@ import torch.nn.functional as F
 class AttentionBlock(nn.Module):
     """
     Attention mechanism for dynamic kernel selection.
-    
-    This block generates attention weights that determine how to combine multiple
-    convolution kernels in the dynamic convolution layer. The attention is computed
-    based on global context extracted through adaptive pooling.
-    
-    Architecture:
-        Input -> AdaptiveMaxPool2d -> FC1 -> ReLU -> FC2 -> Softmax(temperature-scaled)
-        
-    The temperature parameter controls the sharpness of attention distribution:
-    - Higher temperature: More uniform attention (softer selection)
-    - Lower temperature: More focused attention (harder selection)
     """
     
     def __init__(self, in_channels, ratios, K, temperature, init_weight=False):
@@ -46,11 +23,6 @@ class AttentionBlock(nn.Module):
             temperature (int): Temperature parameter for softmax sharpening
                               Must satisfy: temperature % 3 == 1
             init_weight (bool): Whether to initialize weights using custom scheme
-            
-        Components:
-            - avgpool: Global context extraction via adaptive max pooling
-            - fc1: First fully connected layer for dimensionality reduction
-            - fc2: Second fully connected layer to generate K attention weights
         """
         super(AttentionBlock, self).__init__()
         assert temperature % 3 == 1, "Temperature must satisfy: temperature % 3 == 1"
@@ -76,9 +48,6 @@ class AttentionBlock(nn.Module):
     def _initialize_weights(self):
         """
         Initialize network weights using Kaiming normal initialization.
-        
-        This initialization scheme is particularly suitable for networks with ReLU
-        activations, helping to maintain proper signal flow during training.
         """
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -92,10 +61,6 @@ class AttentionBlock(nn.Module):
     def updata_temperature(self):
         """
         Update temperature parameter during training for curriculum learning.
-        
-        Gradually decreases temperature to make attention more focused over time.
-        This implements a form of curriculum learning where the model starts with
-        softer attention and gradually becomes more selective.
         """
         if self.temperature != 1:
             self.temperature -= 3
@@ -104,7 +69,6 @@ class AttentionBlock(nn.Module):
     def forward(self, x):
         """
         Generate attention weights for kernel selection.
-        
         Args:
             x (torch.Tensor): Input feature tensor (batch_size, in_channels, height, width)
             
@@ -112,11 +76,6 @@ class AttentionBlock(nn.Module):
             torch.Tensor: Attention weights of shape (batch_size, K)
                          where K is the number of kernels, values sum to 1.0
                          
-        Processing Flow:
-            1. Global context extraction via adaptive max pooling
-            2. Feature compression through first FC layer + ReLU
-            3. Attention weight generation through second FC layer
-            4. Temperature-scaled softmax for final attention distribution
         """
         # Extract global context
         x = self.avgpool(x)                    # Shape: (batch_size, in_channels, 1, 1)
@@ -133,18 +92,6 @@ class AttentionBlock(nn.Module):
 class DynamicConv(nn.Module):
     """
     Dynamic Convolution Layer with Adaptive Kernel Selection.
-    
-    This layer maintains multiple convolution kernels and dynamically selects/combines
-    them based on input content using an attention mechanism. This allows the model
-    to adapt its convolution operation based on the characteristics of the input,
-    providing more flexibility than standard fixed-kernel convolution.
-    
-    Key Features:
-    - Multiple parallel convolution kernels (K kernels)
-    - Content-based attention for kernel weighting
-    - Dynamic aggregation of kernel weights and biases
-    - Efficient grouped convolution implementation
-    
     Architecture:
         Input -> AttentionBlock -> Weighted Kernel Aggregation -> Grouped Conv -> Output
     """
@@ -153,7 +100,6 @@ class DynamicConv(nn.Module):
                  padding=1, dilation=1, groups=1, bias=True, K=4, temperature=1, init_weight=True):
         """
         Initialize dynamic convolution layer.
-        
         Args:
             in_channels (int): Number of input channels
             out_channels (int): Number of output channels
@@ -167,11 +113,6 @@ class DynamicConv(nn.Module):
             K (int): Number of parallel kernels (default: 4)
             temperature (int): Temperature parameter for attention softmax (default: 1)
             init_weight (bool): Whether to initialize weights (default: True)
-            
-        Components:
-            - attention: AttentionBlock for generating kernel selection weights
-            - weight: Learnable parameter tensor for K parallel kernels
-            - bias: Optional learnable bias parameters for K kernels
         """
         super(DynamicConv, self).__init__()
         assert in_channels % groups == 0, "in_channels must be divisible by groups"
@@ -233,17 +174,6 @@ class DynamicConv(nn.Module):
         Returns:
             torch.Tensor: Output tensor of shape (batch_size, out_channels, height', width')
                          where spatial dimensions depend on stride, padding, and kernel_size
-                         
-        Processing Flow:
-            1. Generate attention weights for K kernels using input content
-            2. Aggregate K kernels into batch-specific kernels using attention weights
-            3. Perform grouped convolution with aggregated kernels
-            4. Reshape output to proper batch format
-            
-        Implementation Details:
-            - Uses grouped convolution for efficiency (groups = groups * batch_size)
-            - Each sample in the batch gets its own aggregated kernel
-            - Attention weights are sample-specific, enabling adaptive processing
         """
         # Step 1: Generate attention weights for kernel selection
         softmax_attention = self.attention(x)  # Shape: (batch_size, K)
