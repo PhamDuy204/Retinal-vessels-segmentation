@@ -1,5 +1,5 @@
 import torch
-from utils import check_model_forward_args
+from utils import *
 from torchmetrics.classification import Accuracy,BinaryF1Score,\
                                         AUROC, Recall, Specificity,\
                                         JaccardIndex
@@ -8,7 +8,7 @@ from tqdm import tqdm
 # from timm.models.maxxvit import window_partition,window_reverse
 # import kornia
 
-def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64):
+def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split='random'):
     torch.cuda.set_device(gpu_id)
     torch.cuda.empty_cache()
 
@@ -25,13 +25,21 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64):
             # out_sample=[]
             model.eval()
             image, mask, edge = sample.values()
-            # B,C,H,W = image.shape
+            B,C,H,W = image.shape
             image = image.cuda()
             mask  = mask.cuda()
-            edge  = edge.cuda() 
-            # if patch:
-            #     image = kornia.contrib.extract_tensor_patches(image, patch_size, patch_size//4).flatten(0,1)
-            #     edge = kornia.contrib.extract_tensor_patches(edge, patch_size, patch_size//4).flatten(0,1)
+            edge  = edge.cuda()
+            stride=None
+            if patch and type_split!='random':
+                condition=int(H>W)
+                num_patch=(21+condition,21+(1-condition))
+                image,tmp_stride = extract_patches_with_target_count(image,patch_size,num_patch)
+                edge,_ = extract_patches_with_target_count(edge,patch_size,num_patch)
+                stride=tmp_stride
+                if len(image.shape)>4:
+                    image=image.flatten(0,1)
+                    edge=edge.flatten(0,1)
+            #   edge = kornia.contrib.extract_tensor_patches(edge, patch_size, patch_size//4).flatten(0,1)
 
                 # image = window_partition(image.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
                 # edge = window_partition(edge.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
@@ -40,15 +48,22 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64):
             # chunk_edge = torch.chunk(edge,chunk_size,0)
             # for chunk in zip(chunk_image,chunk_edge):
             #     c_image,c_edge=chunk
+            print(image.shape)
             if check_model_forward_args(model) == 2:
                 prob = model(image, edge)
             else:
                 prob = model(image)
                 # out_sample.append(prob)
             # prob= torch.cat(out_sample,0)
-            if patch :
+            if patch:
                 # prob = kornia.contrib.combine_tensor_patches(prob.view(B,-1,1,patch_size,patch_size), original_size=(H,W),window_size=patch_size,stride=patch_size//4)
                 # prob=window_reverse(prob.permute(0,2,3,1).contiguous(),[patch_size,patch_size],[H,W]).permute(0,3,1,2).contiguous()
+                # if type_split=='random':
+                #     h, w = mask.shape[-2:]
+                #     prob = prob[:,:,:h,:w]
+                if stride is not None:
+                    prob = prob.view(B,-1,1,patch_size,patch_size)
+                    prob=reverse_to_original_image(prob,mask.shape[-2:],patch_size,stride)
                 h, w = mask.shape[-2:]
                 prob = prob[:,:,:h,:w]
             prob= prob.squeeze().detach().cuda().flatten()
@@ -56,7 +71,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64):
             # print(mask.dtype)
             # print(prob.dtype)
 
-            pred_mask = torch.where(prob>0.47,1,0)
+            pred_mask = torch.where(prob>0.5,1,0)
 
             acc_metric.update(pred_mask, mask)
             f1_metric.update(pred_mask, mask)
