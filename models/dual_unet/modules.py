@@ -60,11 +60,10 @@ class EncoderBlock(nn.Module):
         # Dual-branch feature extraction
         self.depthwise = DepthwiseConv(in_channels, out_channels, kernel_size, padding=padding, stride=1)
         self.dynamicconv = DynamicConv(in_channels, out_channels, kernel_size, padding=padding)
-        
         # Feature fusion and downsampling
         self.conv1x1 = nn.Conv2d(out_channels*2, out_channels, kernel_size=1, padding='same') # Fusion before downsampling and also is the output of skip connection
         self.down = nn.Sequential(
-                nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1),  # Fix: padding=1 for proper spatial preservation
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1),  # decreaseed by 2 
                 nn.BatchNorm2d(num_features=out_channels), 
                 nn.ReLU()
         )
@@ -97,16 +96,16 @@ class EncoderBlock(nn.Module):
         depthwise_out = self.depthwise(X)     # Shape: (N, out_channels, H, W)  # Fixed comment
         dyconv_out = self.dynamicconv(X)      # Shape: (N, out_channels, H, W)
 
-        # Ensure H, W of the two feature map 
+                # Ensure H, W of the two feature map 
         if depthwise_out.shape[2:] != dyconv_out.shape[2:]: 
             delta_height = np.abs(depthwise_out.size()[2] - dyconv_out.size()[2])
             delta_width = np.abs(depthwise_out.size()[3] - dyconv_out.size()[3])
 
             dyconv_out = F.pad(dyconv_out, [delta_width // 2, delta_width - delta_width // 2, 
                             delta_height // 2, delta_height - delta_height // 2])
-
+            
         # Concatenate dual-branch outputs along channel dimension
-        combined = torch.cat((depthwise_out, dyconv_out), dim=1)  # Shape: (N, in_channels + out_channels, H, W)
+        combined = torch.cat((depthwise_out, dyconv_out), dim=1)  # Shape: (N, out_channels*2, H, W)
         
         # Fuse concatenated features through 1x1 convolution
         fused = self.conv1x1(combined)        # Shape: (N, out_channels, H, W)
@@ -114,53 +113,21 @@ class EncoderBlock(nn.Module):
         # Generate downsampled features for next encoder level
         out = self.down(fused)                # Shape: (N, out_channels, H//2, W//2)
         
-        return out, fused  # (downsampled, skip_connection or attention) 
+        return out, fused  # Return (downsampled features, skip connection features)
     
 
 
 class DecoderBlock(nn.Module):
-    """
-    Attention-Guided Decoder Block for feature upsampling and fusion.
     
-    This block implements an attention-guided decoder that combines:
-    1. Skip connection features from the corresponding encoder level
-    2. Upsampled features from the deeper decoder level
-    
-    The attention mechanism helps the model focus on relevant features during
-    the fusion process, improving segmentation accuracy.
-    
-    Architecture:
-        encoder_features + upsampled_features -> Attention -> Concatenate -> Conv -> Output
-        
-    Key Features:
-        - Attention-based feature selection
-        - Dynamic convolution layer creation based on actual tensor dimensions
-        - Spatial and channel dimension alignment
-    """
-    
-    def __init__(self, in_channels, out_channels):
-        """
-        Initialize the attention-guided decoder block.
-        
-        Args:
-            in_channels (int): Number of input channels from encoder skip connection
-            out_channels (int): Number of output channels after processing
-            
-        Components:
-            - batchnorm: Batch normalization for encoder features
-            - attention: Attention mechanism for feature selection
-            - upsample: Bilinear upsampling (scale_factor=2)
-            - conv_procedure: Dynamically created based on concatenated feature dimensions
-        """
+    def __init__(self, skip_channels, deeper_channels, out_channels):
         super(DecoderBlock, self).__init__()
-
-        self.batchnorm = nn.BatchNorm2d(num_features=in_channels)
+        
+        self.out_channels = out_channels 
+        self.batchnorm = nn.BatchNorm2d(num_features=skip_channels)  # Fixed: should match skip connection channels
         self.relu = nn.ReLU()
-        # self.attention = Attention(in_channels*2, out_channels)
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
-        self.out_channels = out_channels
 
-        # Note: conv_procedure is created dynamically in forward() based on actual tensor dimensions
+        self.attention = Attention(skip_channels, deeper_channels, out_channels)
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
     def forward(self, x1, x2):
         """
@@ -168,48 +135,30 @@ class DecoderBlock(nn.Module):
         
         Args:
             x1 (torch.Tensor): Encoder skip connection features
-                              Shape: (batch_size, in_channels, height, width)
+                              Shape: (batch_size, skip_channels, height, width)
             x2 (torch.Tensor): Features from deeper decoder level
-                                    Shape: (batch_size, channels, height//2, width//2)Q
+                              Shape: (batch_size, deeper_channels, height//2, width//2)
+            
+        Returns:
             torch.Tensor: Fused and processed features
                          Shape: (batch_size, out_channels, height, width)
-                         
-        Processing Flow:
-            1. Upsample x2 to match x1's spatial dimensions
-            2. Apply attention mechanism to select relevant features
-            3. Ensure spatial dimension alignment between attention output and upsampled features
-            4. Concatenate attention-weighted features with upsampled features
-            5. Process through dynamically created convolution layers
-            
-        Note: The convolution layers are created dynamically to handle varying 
-              channel dimensions that arise from the attention mechanism and 
-              different encoder-decoder level combinations.
         """
-
-        # Upsample deeper features to match encoder feature spatial dimensions
-        upsampled_x2 = self.upsample(x2)
-
-        # Apply attention mechanism for feature selection and fusion
-        # Attention takes original x2 and handles its own upsampling internally
-        # attn_map = self.attention(x1, x2)
-
-        # Ensure spatial dimension alignment between attention output and upsampled features
-        # if upsampled_x2.shape[2:] != x1.shape[2:]:
-        #     upsampled_x2 = F.interpolate(upsampled_x2, size=x1.shape[2:], 
-        #                                 mode='bilinear', align_corners=False)
         
-        if upsampled_x2.shape[2:] != x1.shape[2:]:
-            delta_height = np.abs(upsampled_x2.size()[2] - x1.size()[2])
-            delta_width = np.abs(upsampled_x2.size()[3] - x1.size()[3])
+        # Apply batch normalization to skip connection features
+        x1_norm = self.batchnorm(x1)
+        
+        # Apply attention mechanism for feature selection and fusion
+        attn_features = self.attention(x1_norm, x2)
+        upsampled_x2 = self.upsample(x2)
+        
+        # Ensure spatial dimensions match before concatenation
+        if upsampled_x2.shape[2:] != attn_features.shape[2:]:
+            upsampled_x2 = F.interpolate(upsampled_x2, size=attn_features.shape[2:], 
+                                        mode='bilinear', align_corners=False)
 
-            upsampled_x2 = F.pad(upsampled_x2, [delta_width // 2, delta_width -  delta_width //2, 
-                                                delta_height // 2, delta_height - delta_height // 2])  
-
-        # Concatenate attention-weighted features with upsampled features
-        concat = torch.cat([x1, upsampled_x2], dim=1)
-
+        concat = torch.cat([attn_features, upsampled_x2], dim=1)
+        
         # Create convolution layers dynamically based on actual concatenated dimensions
-        # This flexibility is needed because attention mechanism may change channel dimensions
         if not hasattr(self, 'conv_procedure') or self.conv_procedure[0].in_channels != concat.shape[1]:
             self.conv_procedure = nn.Sequential(
                 nn.Conv2d(concat.shape[1], self.out_channels, kernel_size=3, padding=1), 
@@ -217,10 +166,6 @@ class DecoderBlock(nn.Module):
                 nn.ReLU(inplace=True)
             ).to(concat.device)
 
-        # Process concatenated features through convolution layers
         out = self.conv_procedure(concat)
 
         return out
-
-
-

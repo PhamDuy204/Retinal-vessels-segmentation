@@ -33,14 +33,15 @@ class SegModel(nn.Module):
 
         # Decoder Path - Attention-guided feature fusion with progressive upsampling
         # Each decoder block uses attention mechanism to fuse encoder features with upsampled features
-        self.up1 = DecoderBlock(1024 + 512, 512)   # 512 + 1024 -> 512, spatial: H/16 x W/16
-        self.up2 = DecoderBlock(512 + 256, 256)   # 256 + 512 -> 256,  spatial: H/8 x W/8
-        self.up3 = DecoderBlock(256 + 128, 128)   # 128 + 256 -> 128,  spatial: H/4 x W/4  # Fixed: 256 not 512
-        self.up4 = DecoderBlock(128 + 64, 64)           # 64 + 128 -> 64,    spatial: H/2 x W/2
+        # Format: DecoderBlock(skip_channels, deeper_channels, out_channels)
+        self.up1 = DecoderBlock(512, 1024, 512)   # Takes f4 (512 ch) + b1 (1024 ch) -> u1 (512 ch)
+        self.up2 = DecoderBlock(256, 512, 256)    # Takes f3 (256 ch) + u1 (512 ch)  -> u2 (256 ch)
+        self.up3 = DecoderBlock(128, 256, 128)    # Takes f2 (128 ch) + u2 (256 ch)  -> u3 (128 ch)
+        self.up4 = DecoderBlock(64, 128, 64)      # Takes f1 (64 ch)  + u3 (128 ch)  -> u4 (64 ch)
 
         # Final Output Layer - Generate segmentation mask
         self.out = nn.Sequential(
-            nn.Conv2d(64, num_class, kernel_size=1, padding=0) ,  # 64 -> 1 channel segmentation mask
+            nn.Conv2d(64, num_class, kernel_size=1, padding='same'),  # 64 -> 1 channel segmentation mask
             nn.Sigmoid()  # Sigmoid activation for binary segmentation (0-1 range)
         )        
 
