@@ -34,12 +34,11 @@ def apply_gamma_correction(image, gamma=1.0):
     return gamma_corrected
 
 def preprocessing_img(path):
-    img=np.array(Image.open(path).convert('RGB'),dtype=np.uint8)
+    img=cv2.imread(path,1)
     r,g,b=img.transpose(2,0,1)
-    new_r=wiener(apply_gamma_correction(r,2).astype(np.uint8).astype(np.float32),12)
-    new_g=cv2.createCLAHE(8,(12,12)).apply(g.astype(np.uint8))
-    new_b=wiener(cv2.createCLAHE(6,(12,12)).apply(b).astype(np.float32),12)
-    new_img = np.array([new_r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
+    new_g=cv2.createCLAHE(3,(8,8)).apply(g.astype(np.uint8))
+    new_b=wiener(cv2.createCLAHE(3,(8,8)).apply(b).astype(np.float32),5)
+    new_img = np.array([r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
     out=convert_gray(new_img).clip(0,255).astype(np.uint8)
     return out
 
@@ -109,5 +108,24 @@ def mirror_padding_v2(image):
 
 def count_trainable_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
+    while len(img.shape)<4:
+        img=img.unsqueeze(0)
+
+    if isinstance(patch_size, int):
+        ph, pw = patch_size, patch_size
+    else:
+        ph, pw = patch_size
+
+    _, _, H, W = img.shape
+    sh = (H - ph) // (target_patches_per_dim[0] - 1) if target_patches_per_dim[0] > 1 else H
+    sw = (W - pw) // (target_patches_per_dim[1] - 1) if target_patches_per_dim[1] > 1 else W
+
+    patches = kornia.contrib.extract_tensor_patches(img, (ph, pw), stride=(sh, sw),allow_auto_padding=True).flatten(0,1)
+    return patches, (sh, sw)
+def reverse_to_original_image(patches, original_size,patch_size,stride):
+    original_image = kornia.contrib.combine_tensor_patches(patches, original_size=original_size,window_size=patch_size,stride=stride,allow_auto_unpadding=True)
+    return original_image
 
    
