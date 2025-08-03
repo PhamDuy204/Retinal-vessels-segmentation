@@ -30,16 +30,17 @@ parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-tt", "--train_type",type=str, default='patch')
 parser.add_argument("-ch", "--chunk_size",type=int, default=None)
 parser.add_argument("-k", "--key",type=str, default=None)
+parser.add_argument("-ts", "--type_split",type=str, default='window')
 args = parser.parse_args()
 
 wandb.login(key=args.key)
 
-datasets = get_all_training_set('./data',args.batch_size,args.patches,args.patch_size,args.train_type)
+datasets = get_all_training_set('./data',args.batch_size,args.patches,args.patch_size,args.train_type,args.type_split)
 
 
 class Trainer:
     def __init__(self,model,train_loader
-                 ,val_loader,criterion,optimizer,scheduler,gpu_id,name,save_dir='./checkpoints',patch=False):
+                 ,val_loader,criterion,optimizer,scheduler,gpu_id,name,save_dir='./checkpoints',patch=False,type_split=args.type_split):
         self.model=model
         self.train_loader=train_loader
         self.val_loader= val_loader
@@ -53,6 +54,7 @@ class Trainer:
         model_class_name = type(self.model).__name__
         self.model_name = model_class_name
         self.patch=patch
+        self.type_split=type_split
     def train(self,epochs=100):
         torch.cuda.set_device(self.gpu_id)
         self.model.cuda()
@@ -83,6 +85,7 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
+                print(image.shape)
                 if args.chunk_size is None:
 
                     chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size),1)
@@ -108,7 +111,7 @@ class Trainer:
                     training_loss+=loss.item()
             self.scheduler.step()
             current_lr = self.optimizer.param_groups[0]['lr']
-            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch,args.patch_size)
+            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch,args.patch_size,self.type_split)
             scores={
                 'acc':acc,
                 'f1':f1,
@@ -168,10 +171,21 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
-                    # B,C,H,W = ex_image.shape           
+                    B,C,H,W = ex_image.shape           
                     ex_image=ex_image.cuda()
                     ex_mask=ex_mask.cuda()
                     ex_edge=ex_edge.cuda()
+                    stride=None
+                    if self.patch and self.type_split!='random':
+                        condition=int(H>W)
+                        num_patch=(21+condition,21+(1-condition))
+                        ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
+                        ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
+                        stride=tmp_stride
+                        if len(ex_image.shape)>4:
+                            ex_image=ex_image.flatten(0,1)
+                            ex_edge=ex_edge.flatten(0,1)
+                    
                     # if self.patch:
                     #     # ex_image = window_partition(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
                     #     # ex_edge = window_partition(ex_edge.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
@@ -183,6 +197,7 @@ class Trainer:
                     # out_sample=[]
                     # for chunk in zip(chunk_image,chunk_edge):
                     #     c_image,c_edge=chunk
+
                     if check_model_forward_args(best_model) == 2:
                         ex_pred_mask = best_model(ex_image, ex_edge)
                     else:
@@ -198,12 +213,22 @@ class Trainer:
                         # ex_image = kornia.contrib.combine_tensor_patches(ex_image.view(B,-1,C,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
                         # ex_pred_mask=window_reverse(ex_pred_mask.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
                         # ex_image=window_reverse(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
-                        
+                        # if self.type_split=='random':
+                        #     h, w = ex_mask.shape[-2:]
+                        #     ex_pred_mask=ex_pred_mask[:,:,:h,:w]
+                        #     ex_image=ex_image[:,:,:h,:w]
+                        if stride is not None:
+                            ex_pred_mask = ex_pred_mask.view(B,-1,1,args.patch_size,args.patch_size)
+                            ex_image = ex_image.view(B,-1,C,args.patch_size,args.patch_size)
+                            ex_pred_mask=reverse_to_original_image(ex_pred_mask,(H,W),args.patch_size,stride)
+                            ex_image=reverse_to_original_image(ex_image,(H,W),args.patch_size,stride)
                         h,w = ex_mask.shape[-2:]
                         ex_image=ex_image[:,:,:h,:w]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
-                    ex_pred_mask=torch.where(ex_pred_mask>0.47,1,0)
+                    ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
+                    # print(ex_pred_mask.shape)
+                    # print(ex_image.shape)
                     for i in range(len(ex_image)):
                         image_np = ex_image[i].squeeze().detach().cpu().numpy()
                         if image_np.max() <= 1.0:
@@ -279,6 +304,8 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                     config={
                         "dataset": name,
                         "model": model_class_name,
+                        "num_patch": None if ~patch else args.patch_size,
+                        'type_split': None if ~patch else args.type_split,
                         "optimizer": "Adam",
                         "lr": args.learning_rate,
                         "epochs": args.epochs,
@@ -288,8 +315,8 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                 )
 
             criterion = load_loss_class(args.loss)()
-            optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=1e-6)
+            optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=1e-5)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=1e-7)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,
