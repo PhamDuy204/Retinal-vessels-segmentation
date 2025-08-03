@@ -28,18 +28,18 @@ class SegModel(nn.Module):
         self.bottle_neck = CPSE(256) #b,256,8,8
 
         self.DGF_3 = DGF(256,256) # b,128,16,16
-        self.maxxvit_3 = maxxvit(128)
+        self.MDAE_3 = MDAE(128)
 
         self.DGF_2 = DGF(128,128) #b,128,128
-        self.maxxvit_2 = maxxvit(128)
+        self.MDAE_2 = MDAE(128)
 
         self.DGF_1 = DGF(128,64)
-        self.maxxvit_1 = maxxvit(128)
+        self.MDAE_1 = MDAE(128)
 
         # self.DGF_2 = DGF(,128)
-        self.b3 = change_feature_size_x4(128,1)
-        self.b2 = change_feature_size_x2(128,1)
-        self.b1 = change_feature_size_x1(128,1)
+        self.b3 = change_feature_size(128,1,4)
+        self.b2 = change_feature_size(128,1,2)
+        self.b1 = change_feature_size(128,1,1)
 
         self.AWL_func = AWL(3)
 
@@ -58,13 +58,13 @@ class SegModel(nn.Module):
 
         x_DGF_3 = self.DGF_3(bottle_neck,x_conv3)  #b,256,158,176
         # print(x_DGF_3.shape)
-        x_MDAE_3 =  self.maxxvit_3(x_DGF_3)  #b,256,158,176
+        x_MDAE_3 =  self.MDAE_3(x_DGF_3)  #b,256,158,176
 
         x_DGF_2 = self.DGF_2(x_DGF_3,x_conv2)
-        x_MDAE_2 = self.maxxvit_2(x_DGF_2)
+        x_MDAE_2 = self.MDAE_2(x_DGF_2)
 
         x_DGF_1 = self.DGF_1(x_DGF_2,x_conv1)
-        x_MDAE_1 = self.maxxvit_1(x_DGF_1)
+        x_MDAE_1 = self.MDAE_1(x_DGF_1)
 
         out = torch.sigmoid(self.AWL_func(self.b3(x_MDAE_3),self.b2(x_MDAE_2),self.b1(x_MDAE_1)))
         return out

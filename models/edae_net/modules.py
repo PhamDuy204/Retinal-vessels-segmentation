@@ -21,77 +21,77 @@ class GAP_conv(nn.Module):
 import torch
 import torch.nn as nn
 
-# class MDAE(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.gap = nn.AdaptiveAvgPool2d(1)
-#         self._initialized = False
-#         self.h_shape = None
-#         self.w_shape = None
-#         self.c_shape = None
+class MDAE(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self._initialized = False
+        self.h_shape = None
+        self.w_shape = None
+        self.c_shape = None
 
 
-#     def _initialize(self, x):
-#         _, c, h, w = x.shape
-#         if (not hasattr(self, 'conv1')) or (self.h_shape != h):
-#             self.conv1 = nn.Sequential(
-#                 nn.Conv2d(h, h, 1, bias=False).to(x.device),
-#                 nn.Sigmoid()
-#             )
-#             self.h_shape = h
+    def _initialize(self, x):
+        _, c, h, w = x.shape
+        if (not hasattr(self, 'conv1')) or (self.h_shape != h):
+            self.conv1 = nn.Sequential(
+                nn.Conv2d(h, h, 1, bias=False).to(x.device),
+                nn.Sigmoid()
+            )
+            self.h_shape = h
 
-#             self.add_module("conv1",self.conv1)
-#         if (not hasattr(self, 'conv2'))  or (self.w_shape != w):
-#             self.conv2 = nn.Sequential(
-#                 nn.Conv2d(w, w, 1, bias=False).to(x.device),
-#                 nn.Sigmoid()
-#             )
-#             self.w_shape = w
-#             self.add_module("conv2",self.conv2)
+            self.add_module("conv1",self.conv1)
+        if (not hasattr(self, 'conv2'))  or (self.w_shape != w):
+            self.conv2 = nn.Sequential(
+                nn.Conv2d(w, w, 1, bias=False).to(x.device),
+                nn.Sigmoid()
+            )
+            self.w_shape = w
+            self.add_module("conv2",self.conv2)
 
-#         if (not hasattr(self, 'conv3')) or (self.c_shape != c):
-#             self.conv3 = nn.Sequential(
-#                 nn.Conv2d(c, c, 1, bias=False).to(x.device),
-#                 nn.Sigmoid()
-#             )
-#             self.add_module("conv3",self.conv3)
+        if (not hasattr(self, 'conv3')) or (self.c_shape != c):
+            self.conv3 = nn.Sequential(
+                nn.Conv2d(c, c, 1, bias=False).to(x.device),
+                nn.Sigmoid()
+            )
+            self.add_module("conv3",self.conv3)
 
-#         self._initialized = True
+        self._initialized = True
 
-#     def forward(self, x):
-#         if not self._initialized:
-#             self._initialize(x)
-#         x_1 = self.conv1(self.gap(x.permute(0, 2, 1, 3)))
-#         x_3 = self.conv2(self.gap(x.permute(0, 3, 2, 1)))
-#         x_2 = self.conv3(self.gap(x))
-#         return x+x_2 + x_3.permute(0, 3, 2, 1) + x_1.permute(0, 2, 1, 3)
+    def forward(self, x):
+        if not self._initialized:
+            self._initialize(x)
+        x_1 = self.conv1(self.gap(x.permute(0, 2, 1, 3)))
+        x_3 = self.conv2(self.gap(x.permute(0, 3, 2, 1)))
+        x_2 = self.conv3(self.gap(x))
+        return x+x_2 + x_3.permute(0, 3, 2, 1) + x_1.permute(0, 2, 1, 3)
 
 
-class self_attention(nn.Module):
-  def __init__(self,in_channel):
-    super().__init__()
-    self.bn1 = nn.LayerNorm(in_channel)
-    self.bn2 = nn.LayerNorm(in_channel)
-    self.bn3 = nn.LayerNorm(in_channel)
-    self.lr = nn.Linear(in_channel,3*in_channel,bias=False)
-    self.out = nn.Linear(in_channel,in_channel,bias=False)
-  def forward(self,x):
-    b,c,h,w = x.shape
-    x = x.view(b,c,h*w).permute(0,2,1)
-    q,k,v = self.lr(x).chunk(3,-1)
-    softmax = nn.Softmax(2)(self.bn1(torch.matmul(q.permute(0,2,1),k)))
-    rs = self.bn2(torch.matmul(v,softmax))
-    return self.bn3(self.out(rs)).permute(0,2,1).view(b,c,h,w)
-class maxxvit(nn.Module):
-  def __init__(self,in_channel):
-    super().__init__()
-    self.attn = self_attention(in_channel)
-  def forward(self,x):
-    b,c,h,w = x.shape
-    x = x.permute(0,2,3,1).contiguous()
-    x = self.attn(window_partition(x,(4,4)).permute(0,3,1,2).contiguous()).permute(0,2,3,1).contiguous()
-    x = window_reverse(x,(4,4),h,w)
-    return x.permute(0,3,1,2).contiguous()
+# class self_attention(nn.Module):
+#   def __init__(self,in_channel):
+#     super().__init__()
+#     self.bn1 = nn.LayerNorm(in_channel)
+#     self.bn2 = nn.LayerNorm(in_channel)
+#     self.bn3 = nn.LayerNorm(in_channel)
+#     self.lr = nn.Linear(in_channel,3*in_channel,bias=False)
+#     self.out = nn.Linear(in_channel,in_channel,bias=False)
+#   def forward(self,x):
+#     b,c,h,w = x.shape
+#     x = x.view(b,c,h*w).permute(0,2,1)
+#     q,k,v = self.lr(x).chunk(3,-1)
+#     softmax = nn.Softmax(2)(self.bn1(torch.matmul(q.permute(0,2,1),k)))
+#     rs = self.bn2(torch.matmul(v,softmax))
+#     return self.bn3(self.out(rs)).permute(0,2,1).view(b,c,h,w)
+# class maxxvit(nn.Module):
+#   def __init__(self,in_channel):
+#     super().__init__()
+#     self.attn = self_attention(in_channel)
+#   def forward(self,x):
+#     b,c,h,w = x.shape
+#     x = x.permute(0,2,3,1).contiguous()
+#     x = self.attn(window_partition(x,(4,4)).permute(0,3,1,2).contiguous()).permute(0,2,3,1).contiguous()
+#     x = window_reverse(x,(4,4),h,w)
+#     return x.permute(0,3,1,2).contiguous()
 
 
 class MAC(nn.Module):
@@ -194,7 +194,7 @@ class convolution(nn.Module):
             nn.GroupNorm(out_channel,out_channel,affine=False),
             nn.ReLU(),
 
-            nn.Conv2d(out_channel,out_channel,3,padding='same',bias=False,groups = out_channel),
+            nn.Conv2d(out_channel,out_channel,3,padding='same',bias=False),
             nn.GroupNorm(out_channel,out_channel,affine=False),
             nn.ReLU(),
         )
@@ -245,6 +245,14 @@ class change_feature_size_x1(nn.Module):
         return self.norm(self.out(x))
 
 
-
+class change_feature_size(nn.Module):
+    def __init__(self,in_channel,out_channel,scale_factor):
+        super().__init__()
+        self.out = nn.Sequential(
+            nn.ConvTranspose2d(in_channel,in_channel,scale_factor,stride=scale_factor,bias=False),
+            nn.Conv2d(in_channel,out_channel,1,bias=False)
+        )
+    def forward(self,x):
+        return self.out(x)
 
 
