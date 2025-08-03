@@ -24,7 +24,7 @@ parser.add_argument("-b", "--batch_size",type=int, default=1)
 parser.add_argument("-e", "--epochs",type=int, default=100)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
-parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
+parser.add_argument("-lr", "--learning_rate",type=float, default=7e-4)
 parser.add_argument("-p", "--patches",type=int, default=500)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-tt", "--train_type",type=str, default='patch')
@@ -85,7 +85,7 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                print(image.shape)
+                # print(image.shape)
                 if args.chunk_size is None:
 
                     chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size),1)
@@ -316,7 +316,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=1e-7)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=1e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,
