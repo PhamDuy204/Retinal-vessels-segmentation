@@ -26,21 +26,24 @@ def sobel_transform(image):
     sb = (sb_x+sb_y)/2
     return sb
 
-def apply_gamma_correction(image, gamma=1.0):
+def apply_gamma_correction(orimage, gamma=1.0):
+    image=orimage.copy().astype(float)
     image_normalized = image / 255.0
     gamma_corrected = np.power(image_normalized, gamma)
-    gamma_corrected = np.uint8(gamma_corrected * 255)
+    gamma_corrected = np.uint8((gamma_corrected * 255).clip(0,255))
 
     return gamma_corrected
 
 def preprocessing_img(path):
     img=cv2.imread(path,1)
-    r,g,b=img.transpose(2,0,1)
+    if 'STARE' in path:
+        img=(img.astype(float)-27).clip(0,255).astype(np.uint8)
+    b,g,r=img.transpose(2,0,1)
     new_g=cv2.createCLAHE(3,(8,8)).apply(g.astype(np.uint8))
     new_b=wiener(cv2.createCLAHE(3,(8,8)).apply(b).astype(np.float32),5)
-    new_img = np.array([r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
+    new_img = np.array([apply_gamma_correction(r,0.85),new_g,new_b]).transpose(1,2,0).astype(np.uint8)
     out=convert_gray(new_img).clip(0,255).astype(np.uint8)
-    return out
+    return (out.astype(float)-2).clip(0,255).astype(np.uint8)
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:
