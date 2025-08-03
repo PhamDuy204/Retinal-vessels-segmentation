@@ -10,7 +10,7 @@ from utils import *
 from albumentations.pytorch import ToTensorV2
 
 class CustomTrainDataset(Dataset):
-    def __init__(self,root_path,img_transforms=None,with_patches = False,num_patches=500,patch_size=64):
+    def __init__(self,root_path,img_transforms=None,with_patches = False,num_patches=500,patch_size=64,type_split='random'):
         self.image_paths =  sorted(glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
                             + glob.glob(root_path + '/images/*.ppm'))
         self.mask_paths = sorted(glob.glob(root_path + '/mask/*.png')+glob.glob(root_path + '/mask/*.tif')\
@@ -21,6 +21,7 @@ class CustomTrainDataset(Dataset):
         self.with_patches=with_patches
         self.num_patches=num_patches
         self.patch_size=patch_size
+        self.type_split=type_split
     def get_name(self):
         return self.name
     def __len__(self):
@@ -40,9 +41,19 @@ class CustomTrainDataset(Dataset):
             edge = ToTensorV2()(image=sobel_transform(image.clone().detach().cpu().numpy().transpose(1,2,0)))['image']
             if self.with_patches:
                 # print(image.dtype)
-                patches_image,boxes = split_patch(image,self.num_patches,self.patch_size)
-                patches_mask,_ = split_patch(mask,self.num_patches,self.patch_size,boxes)
-                patches_edge,_ = split_patch(edge,self.num_patches,self.patch_size,boxes)
+                if self.type_split=='random':
+                    patches_image,boxes = split_patch(image,self.num_patches,self.patch_size)
+                    patches_mask,_ = split_patch(mask,self.num_patches,self.patch_size,boxes)
+                    patches_edge,_ = split_patch(edge,self.num_patches,self.patch_size,boxes)
+                else:
+                    h_i,w_i=image.shape[-2:]
+                    condition=int(h_i>w_i)
+                    num_patch=(21+condition,21+(1-condition))
+
+                    patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
+                    if len(mask.shape)!=0:mask=mask.unsqueeze(0)
+                    patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
+                    patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
                 return {
                     'image':patches_image,
                     'mask':patches_mask.long().squeeze(),
@@ -59,14 +70,15 @@ class CustomTrainDataset(Dataset):
         }
     
 class CustomTestDataset(Dataset):
-    def __init__(self,root_path,img_transforms=None):
+    def __init__(self,root_path,img_transforms=None,type_split='random'):
         self.image_paths =  sorted(glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
                             + glob.glob(root_path + '/images/*.ppm'))
         self.mask_paths = sorted(glob.glob(root_path + '/mask/*.png')+glob.glob(root_path + '/mask/*.tif')\
                             + glob.glob(root_path + '/mask/*.ppm')+glob.glob(root_path + '/mask/*.gif'))
 
         self.image_transforms = img_transforms
-        self.name = root_path.split('/')[-3]
+        self.name = root_path.split('/')[-2]
+        self.type_split=type_split
     def get_name(self):
         return self.name
     def __len__(self):
@@ -82,8 +94,8 @@ class CustomTestDataset(Dataset):
             t = self.image_transforms(image = image,mask=mask)
             image = t['image']
             mask  = t['mask']
-
-            image=mirror_padding_v2(image)
+            if self.type_split=='random':
+                image=mirror_padding_v2(image)
             edge = ToTensorV2()(image=sobel_transform(image.clone().detach().cpu().numpy().transpose(1,2,0)))['image']
         else:
             raise Exception('img_transforms is compulsory for dataset class')
