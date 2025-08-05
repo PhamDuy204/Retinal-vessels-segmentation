@@ -4,21 +4,8 @@ from .modules import EncoderBlock, DecoderBlock
 
 
 class SegModel(nn.Module):
-    """
-    Dual-Branch U-Net Architecture for Image Segmentation
-    """
-    
+
     def __init__(self, in_channels=1, num_class=1): 
-        """
-        Initialize the Dual-Branch U-Net model.
-        
-        Args:
-            in_channels (int): Number of input channels (default: 3 for RGB images)
-            num_class (int): Base number of output classes
-                               This value is scaled throughout the network:
-                               - Encoder: 64 -> 128 -> 256 -> 512 -> 1024
-                               - Decoder: 512 -> 256 -> 128 -> 64
-        """
         super(SegModel, self).__init__()
 
         # Encoder Path - Dual-branch feature extraction with progressive downsampling

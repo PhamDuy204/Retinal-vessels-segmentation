@@ -1,14 +1,3 @@
-"""
-Dual-Branch U-Net Modules
-
-This module contains the core building blocks for the Dual-Branch U-Net architecture:
-- EncoderBlock: Dual-branch encoder with depthwise and dynamic convolutions
-- DecoderBlock: Attention-guided decoder with dynamic feature fusion
-
-The architecture combines efficient depthwise separable convolutions with adaptive 
-dynamic convolutions in the encoder, and uses attention mechanisms in the decoder
-for improved feature fusion and segmentation performance.
-"""
 
 import torch 
 import numpy as np 
@@ -20,41 +9,8 @@ from .dyconv import DynamicConv
 from .attention import Attention 
 
 class EncoderBlock(nn.Module):
-    """
-    Dual-Branch Encoder Block for feature extraction and downsampling.
-    
-    This block implements a dual-branch architecture that processes input features
-    through two parallel paths:
-    1. Depthwise Separable Convolution: Efficient spatial feature extraction
-    2. Dynamic Convolution: Adaptive kernel selection based on input content
-    
-    The outputs from both branches are concatenated and fused through a 1x1 convolution,
-    followed by downsampling for the next encoder level.
-    
-    Architecture:
-        Input -> [DepthwiseConv, DynamicConv] -> Concatenate -> 1x1 Conv -> Downsample
-        
-    Returns:
-        - Downsampled features for next encoder level
-        - Skip connection features for decoder fusion
-    """
     
     def __init__(self, in_channels, out_channels, kernel_size=3, padding='same'):
-        """
-        Initialize the dual-branch encoder block.
-        
-        Args:
-            in_channels (int): Number of input feature channels
-            out_channels (int): Number of output feature channels after dual-branch processing
-            kernel_size (int): Convolution kernel size (default: 3)
-            padding (str): Padding value - (default: 'same')
-            
-        Components:
-            - depthwise: Depthwise separable convolution (efficient spatial processing)
-            - dynamicconv: Dynamic convolution (adaptive kernel selection)
-            - conv1x1: 1x1 convolution for channel fusion
-            - down: Downsampling convolution (stride=2)
-        """
         super(EncoderBlock, self).__init__() 
 
         # Dual-branch feature extraction
@@ -70,28 +26,6 @@ class EncoderBlock(nn.Module):
 
 
     def forward(self, X):
-        """
-        Forward pass through the dual-branch encoder.
-        
-        Args:
-            X (torch.Tensor): Input feature tensor of shape (batch_size, in_channels, height, width)
-            
-        Returns:
-            tuple: (downsampled_features, skip_features)
-                - downsampled_features: Processed features for next encoder level
-                  Shape: (batch_size, out_channels, height//2, width//2)
-                - skip_features: Features for decoder skip connections
-                  Shape: (batch_size, out_channels, height, width)
-                  
-        Processing Flow:
-            1. Dual-branch processing:
-               - Depthwise: Efficient spatial feature extraction
-               - Dynamic: Content-adaptive kernel selection
-            2. Spatial alignment if needed (via interpolation)
-            3. Channel concatenation of both branches
-            4. Feature fusion via 1x1 convolution
-            5. Downsampling for next encoder level
-        """
         # Dual-branch feature extraction
         depthwise_out = self.depthwise(X)     # Shape: (N, out_channels, H, W)  # Fixed comment
         dyconv_out = self.dynamicconv(X)      # Shape: (N, out_channels, H, W)
@@ -130,19 +64,6 @@ class DecoderBlock(nn.Module):
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
     def forward(self, x1, x2):
-        """
-        Forward pass through the attention-guided decoder.
-        
-        Args:
-            x1 (torch.Tensor): Encoder skip connection features
-                              Shape: (batch_size, skip_channels, height, width)
-            x2 (torch.Tensor): Features from deeper decoder level
-                              Shape: (batch_size, deeper_channels, height//2, width//2)
-            
-        Returns:
-            torch.Tensor: Fused and processed features
-                         Shape: (batch_size, out_channels, height, width)
-        """
         
         # Apply batch normalization to skip connection features
         x1_norm = self.batchnorm(x1)
