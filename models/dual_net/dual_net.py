@@ -2,9 +2,9 @@ from modules import *
 class SegModel(nn.Module):
     def __init__(self, in_channels, out_channels) -> None:
         super().__init__()
-        self.change_channels = nn.Conv2d(in_channels,16,1,bias=False)
+        self.change_channels = nn.Conv2d(in_channels,32,1,bias=False)
         self.down_0=nn.ModuleList([
-            DownSampling(16,32),nn.Conv2d(32,32,3,2,1)])
+            DownSampling(32,32),nn.Conv2d(32,32,3,2,1)])
         self.down_1=nn.ModuleList([
             DownSampling(32,64),nn.Conv2d(64,64,3,2,1)])
         self.down_2=nn.ModuleList([

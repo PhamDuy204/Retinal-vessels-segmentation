@@ -66,11 +66,11 @@ class Attn(nn.Module):
     def __init__(self, in_channels_1,in_channels_2):
         super().__init__()
         self.up=nn.ConvTranspose2d(in_channels_1,in_channels_1,4,2,1,groups=in_channels_2,bias=False)
-        self.b_1=nn.Conv2d(in_channels_1,in_channels_2,1,bias=False)
-        self.b_2=nn.Conv2d(in_channels_2,in_channels_2,1,bias=False)
+        self.b_1=DynamicConv(in_channels_1,in_channels_2)
+        self.b_2=DynamicConv(in_channels_2,in_channels_2)
         self.w=nn.Sequential(
             nn.ReLU(),
-            nn.Conv2d(2*in_channels_2,1,1,bias=False),
+            nn.Conv2d(2*in_channels_2,in_channels_1,1,bias=False),
             nn.Sigmoid()
         )
     def forward(self,x_1,x_2):
@@ -91,5 +91,6 @@ class UpSampling(nn.Module):
         attn=self.attn(x_1,x_2)
         up = self.up(x_1)
         return self.out(torch.cat((attn,up),1))
+
 
 
