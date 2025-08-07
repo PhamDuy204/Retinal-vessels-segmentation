@@ -6,9 +6,9 @@ class Depthwise(nn.Module):
         super(Depthwise, self).__init__() 
 
         self.depthwise = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=kernel_size, 
-                                   groups=in_channels, padding=kernel_size // 2)
+                                   groups=in_channels, padding=kernel_size // 2, bias=False)
         
-        self.pointwise = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, padding=0)
+        self.pointwise = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, padding=0, bias=False)
 
     
     def forward(self, X): 

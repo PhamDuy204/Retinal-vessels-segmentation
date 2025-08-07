@@ -52,7 +52,7 @@ class GaborConv(nn.Module):
                  phi=0.0,
                  stride=1,
                  padding=None,
-                 bias=True):
+                 bias=False):
         super(GaborConv, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
