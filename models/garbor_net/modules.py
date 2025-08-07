@@ -11,7 +11,7 @@ class DoubleConv(nn.Module):
         super(DoubleConv, self).__init__() 
         self.depthwise1 = Depthwise(in_channels=in_channels, out_channels=out_channels, kernel_size=3)
         self.depthwise2 = Depthwise(in_channels=out_channels, out_channels=out_channels, kernel_size=3)
-        self.batch_norm = nn.BatchNorm2d(num_features=out_channels)
+        self.batch_norm = nn.GroupNorm(num_groups=out_channels, num_channels=out_channels, affine=False)
         self.relu = nn.ReLU() 
 
         self.garbor = GaborConv(in_channels=out_channels, out_channels=out_channels, kernel_size=3)
