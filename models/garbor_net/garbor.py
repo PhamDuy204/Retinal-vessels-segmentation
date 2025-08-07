@@ -40,19 +40,16 @@ class GaborConv(nn.Module):
     Gabor-modulated convolutional layer.
     Applies multiple Gabor filters at different orientations,
     concatenates the results, and applies a pointwise convolution.
+    ksize = 35        # Kích thước kernel (odd)
+    sigma = 3.0      # Độ rộng của Gaussian
+    theta = np.pi / 2  # Hướng 45 độ
+    lamda = 7.0      # Bước sóng
+    gamma = 0.3        # Aspect ratio
+    psi = 0            # Pha
+
     """
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size=11,
-                 orientations=None,
-                 lam=10.0,
-                 sigma=4.0,
-                 gamma=0.5,
-                 phi=0.0,
-                 stride=1,
-                 padding=None,
-                 bias=False):
+    def __init__(self, in_channels, out_channels, kernel_size=11, orientations=None, lam=7.0, 
+                 sigma=3.0, gamma=0.3, phi=0.0, stride=1, padding=None, bias=False):
         super(GaborConv, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -65,7 +62,6 @@ class GaborConv(nn.Module):
         self.stride = stride
         self.padding = padding if padding is not None else kernel_size // 2
 
-        # pointwise conv to mix orientation responses
         self.pointwise = nn.Conv2d(
             in_channels * len(self.orientations),
             out_channels,
@@ -81,7 +77,6 @@ class GaborConv(nn.Module):
         dtype = x.dtype
 
         for theta in self.orientations:
-            # generate Gabor kernel
             k = gabor_kernel(
                 self.kernel_size, theta,
                 self.lam, self.sigma,
@@ -89,6 +84,7 @@ class GaborConv(nn.Module):
                 device=device,
                 dtype=dtype
             )  # (K, K)
+
             # expand to depthwise conv weight: (C,1,K,K)
             weight = k.unsqueeze(0).unsqueeze(0).repeat(C, 1, 1, 1)
             # depthwise convolution: groups=C
