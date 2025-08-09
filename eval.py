@@ -25,14 +25,16 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             # out_sample=[]
             model.eval()
             image, mask, edge = sample.values()
+            image=mirror_padding_v2(image)
+            edge=mirror_padding_v2(edge)
             B,C,H,W = image.shape
             image = image.cuda()
             mask  = mask.cuda()
             edge  = edge.cuda()
             stride=None
             if patch and type_split!='random':
-                condition=int(H>W)
-                num_patch=(21+condition,21+(1-condition))
+                # condition=int(H>W)
+                num_patch=(32,32)
                 image,tmp_stride = extract_patches_with_target_count(image,patch_size,num_patch)
                 edge,_ = extract_patches_with_target_count(edge,patch_size,num_patch)
                 stride=tmp_stride
@@ -48,7 +50,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             # chunk_edge = torch.chunk(edge,chunk_size,0)
             # for chunk in zip(chunk_image,chunk_edge):
             #     c_image,c_edge=chunk
-            print(image.shape)
+            # print(image.shape)
             if check_model_forward_args(model) == 2:
                 prob = model(image, edge)
             else:
@@ -63,15 +65,15 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
                 #     prob = prob[:,:,:h,:w]
                 if stride is not None:
                     prob = prob.view(B,-1,1,patch_size,patch_size)
-                    prob=reverse_to_original_image(prob,mask.shape[-2:],patch_size,stride)
-                h, w = mask.shape[-2:]
-                prob = prob[:,:,:h,:w]
+                    prob=reverse_to_original_image(prob,(H,W),patch_size,stride)
+            h, w = mask.shape[-2:]
+            prob = prob[:,:,:h,:w]
             prob= prob.squeeze().detach().cuda().flatten()
             mask = mask.squeeze().detach().cuda().flatten()
             # print(mask.dtype)
             # print(prob.dtype)
 
-            pred_mask = torch.where(prob>0.6,1,0)
+            pred_mask = torch.where(prob>0.5,1,0)
 
             acc_metric.update(pred_mask, mask)
             f1_metric.update(pred_mask, mask)

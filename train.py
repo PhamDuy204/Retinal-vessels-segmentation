@@ -24,7 +24,7 @@ parser.add_argument("-b", "--batch_size",type=int, default=1)
 parser.add_argument("-e", "--epochs",type=int, default=100)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
-parser.add_argument("-lr", "--learning_rate",type=float, default=7e-4)
+parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
 parser.add_argument("-p", "--patches",type=int, default=500)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-tt", "--train_type",type=str, default='patch')
@@ -85,7 +85,7 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                print(image.shape)
+                # print(image.shape)
                 if args.chunk_size is None:
 
                     chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size),1)
@@ -169,14 +169,20 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
+
+                    ex_image=mirror_padding_v2(ex_image)
+                    ex_edge=mirror_padding_v2(ex_edge)
+
                     B,C,H,W = ex_image.shape           
                     ex_image=ex_image.cuda()
                     ex_mask=ex_mask.cuda()
                     ex_edge=ex_edge.cuda()
+
+
+
                     stride=None
                     if self.patch and self.type_split!='random':
-                        condition=int(H>W)
-                        num_patch=(21+condition,21+(1-condition))
+                        num_patch=(32,32)
                         ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
                         ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
                         stride=tmp_stride
@@ -223,7 +229,7 @@ class Trainer:
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
-                    ex_pred_mask=torch.where(ex_pred_mask>0.6,1,0)
+                    ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
                     # print(ex_pred_mask.shape)
                     # print(ex_image.shape)
                     for i in range(len(ex_image)):

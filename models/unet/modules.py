@@ -10,11 +10,11 @@ class DoubleConv(nn.Module):
             mid_channel = out_channel
 
         self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channel, mid_channel, kernel_size=3, padding=1),
-            nn.BatchNorm2d(mid_channel),
+            nn.Conv2d(in_channel, mid_channel, kernel_size=3, padding=1,bias=False),
+            nn.GroupNorm(mid_channel,mid_channel,affine=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channel, out_channel, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channel),
+            nn.Conv2d(mid_channel, out_channel, kernel_size=3, padding=1,bias=False),
+            nn.GroupNorm(out_channel,out_channel,affine=False),
             nn.ReLU(inplace=True)
         )
 
@@ -36,7 +36,7 @@ class UpScaling(nn.Module):
     def __init__(self, in_channel, out_channel):
         super().__init__()
 
-        self.upscaling = nn.ConvTranspose2d(in_channel, in_channel // 2, kernel_size=2, stride=2)
+        self.upscaling = nn.ConvTranspose2d(in_channel, in_channel // 2, kernel_size=2, stride=2,bias=False)
         self.double_conv = DoubleConv(in_channel, out_channel)
 
     def forward(self, x1, x2): # x1 from ConvTransposed, x2 from Encoder
@@ -56,7 +56,7 @@ class UpScaling(nn.Module):
 class OutConv(nn.Module):
     def __init__(self, in_channel, out_channel):
         super().__init__()
-        self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=1)
+        self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=1,bias=False)
 
     def forward(self, x):
         return self.conv(x)
