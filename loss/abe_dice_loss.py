@@ -9,6 +9,6 @@ class AbeDiceLoss(nn.Module):
         pred=pred.squeeze().float()
         truth=truth.squeeze().float()
         # Abe Dice Loss
-        erc = torch.pow(pred,2*(1-(pred**2)))
-        abe_diceloss_all = 1-(torch.sum(2*erc*truth)/torch.sum(erc**2 +truth))
-        return abe_diceloss_all
+        # erc = torch.pow(pred,2*(1-(pred**2)))
+        abe_diceloss_all = 1-(torch.sum(2*pred*truth)/torch.sum(pred +truth)) 
+        return 0.7*abe_diceloss_all + 0.3*nn.BCELoss()(pred.flatten(),truth.flatten())

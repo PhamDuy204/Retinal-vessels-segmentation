@@ -46,14 +46,29 @@ class CustomTrainDataset(Dataset):
                     patches_mask,_ = split_patch(mask,self.num_patches,self.patch_size,boxes)
                     patches_edge,_ = split_patch(edge,self.num_patches,self.patch_size,boxes)
                 else:
-                    h_i,w_i=image.shape[-2:]
-                    condition=int(h_i>w_i)
-                    num_patch=(21+condition,21+(1-condition))
+                    # print(image.shape)
+                    image=mirror_padding_v2(image)
+                    # print(image.shape)
+                    # print(mask.shape)
+                    if len(mask.shape)<3:mask=mask.unsqueeze(0)
+                    mask=mirror_padding_v2(mask)
+                    # print(mask.shape)
+                    edge=mirror_padding_v2(edge)
+                    # print(edge.shape)
+                    # h_i,w_i=image.shape[-2:]
+                    # condition=int(h_i>w_i)
+                    num_patch=(32,32)
 
                     patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
-                    if len(mask.shape)!=0:mask=mask.unsqueeze(0)
                     patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
                     patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
+
+                    filter=patches_mask.sum((-1,-2))>=5
+                    # print(filter.shape)
+                    patches_image=patches_image[filter].unsqueeze(1)
+                    # print(patches_image.shape)
+                    patches_mask=patches_mask[filter].unsqueeze(1)
+                    patches_edge=patches_edge[filter].unsqueeze(1)
                 return {
                     'image':patches_image,
                     'mask':patches_mask.long().squeeze(),
