@@ -126,6 +126,7 @@ class Trainer:
                 if scores[method]>best_eval_score[best_method]:
                     best_eval_score[best_method]=scores[method]
             avg_metric = (acc + f1 + iou + recall + spe + auc+dice) / 7
+            best_metric_eval = (f1 + iou+auc)/3
             with open("temp.log", "a") as f:
                 f.write(
                     f"[Epoch {e+1}/{epochs}] Dataset: {self.name} | "
@@ -147,8 +148,8 @@ class Trainer:
                 "val_avg_metric": avg_metric,
                 "lr": current_lr,
             })
-            if avg_metric > best_avg:
-                best_avg = avg_metric
+            if best_metric_eval > best_avg:
+                best_avg = best_metric_eval
                 best_metrics = (acc, f1, iou, recall, spe, auc)
                 best_params=self.model.state_dict()
                 save_e = e
