@@ -9,7 +9,7 @@ import torch.nn.functional as F
 class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.down_image = nn.Conv2d(in_channel,3,kernel_size=2,stride=2,bias=False) #b,3,256,256
+        self.down_image =Conv_func(in_channel,3,2,stride=2,padding=0) #b,3,256,256
         
         self.encode_0 = down_sampling(3,64) #b,8,256,256/b,8,128,128
         self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
