@@ -53,11 +53,11 @@ class Conv_func(nn.Module):
         router=self.router(tmp_x.flatten(-2))
         # router>router.mean(-1).unsqueeze(-1)
         output = torch.zeros(b,h,w,self.out_channel).to(x.device)
-        if self.training:
-            noise = torch.rand_like(router)
-            router+=noise.to(router.device)
+        # if self.training:
+        noise = torch.rand_like(router)
+        router+=noise.to(router.device)
         
-        logits,indices = router.topk(4,-1)     
+        # logits,indices = router.topk(4,-1)     
         # print(logits)
         # print(indices) 
         inf_matrix = torch.where(router>router.mean(-1).unsqueeze(-1),router,-torch.inf)
