@@ -6,7 +6,7 @@ from modules import *
 # import sys
 # import torch.nn.functional as F
 
-class dysta(nn.Module):
+class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
         self.down_image = nn.Conv2d(in_channel,3,kernel_size=2,stride=2,bias=False) #b,3,256,256
