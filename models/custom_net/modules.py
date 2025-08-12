@@ -1,232 +1,112 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import math
+# class Conv_func(nn.Module):
+#     def __init__(self,in_channel,out_channel,kernel=3):
+#         super().__init__()
+#         self.feature = nn.Sequential(
+#             nn.Conv2d(in_channel,out_channel,kernel_size=kernel,padding='same',bias=False),
+#             nn.GroupNorm(out_channel,out_channel,affine=False),
+#             nn.ReLU(),
+#             )
+#     def forward(self,x):
+#         return self.feature(x)
+class Conv_func(nn.Module):
+    def __init__(self,in_channel,out_channel,kernel,padding='same',stride=1,dilation=1):
+        super().__init__()
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+        self.kernel = kernel
+        self.padding = padding
+        self.stride = stride
+        self.dilation = dilation 
+        # self.w = nn.Parameter(torch.rand(kernel*kernel*in_channel,out_channel),requires_grad=True)
+        # nn.init.kaiming_normal_(self.w, mode='fan_out', nonlinearity='relu')
 
-import torch
-import torch.nn as nn
+        self.conv=nn.Conv2d(in_channel,out_channel,kernel,padding=padding,stride=stride,dilation=dilation)
+        self.router = nn.Linear(self.kernel*self.kernel*self.in_channel,self.kernel*self.kernel,bias=False)
+        self.experts =  nn.ModuleList([nn.Linear(self.in_channel,self.out_channel,bias=False) for _ in range(self.kernel*self.kernel)])
+        self.norm=nn.GroupNorm(out_channel,out_channel,affine=False)
+
+    def forward(self,x):
+        b,c,h,w = x.shape
+        if self.padding=='same' and isinstance(self.padding,str):
+            pad_w=((x.shape[-1]-1)*self.stride+self.dilation*(self.kernel-1)+1-x.shape[-1])/2
+            pad_h=((x.shape[-2]-1)*self.stride+self.dilation*(self.kernel-1)+1-x.shape[-2])/2
+            pad_=(int(math.ceil(pad_h)),int(math.floor(pad_w)),int(math.ceil(pad_h)),int(math.floor(pad_w)))
+        else:
+            pad_=(self.padding,self.padding,self.padding,self.padding)
 
 
+        padded_x=torch.nn.functional.pad(x,pad_,value=0)
+        # print(padded_x.shape)
+        b,c,h_new,w_new = padded_x.shape
+        # print(padded_x.shape)
+        if self.padding=='same':
+            tmp_x = F.unfold(padded_x,kernel_size=self.kernel,stride =self.stride,dilation=self.dilation).permute(0,2,1).reshape(b,h,w,c,self.kernel*self.kernel).permute(0,1,2,4,3)
+        
+        else:
+           
+            tmp_x = F.unfold(padded_x,kernel_size=self.kernel,stride =self.stride,dilation=self.dilation).permute(0,2,1).reshape(b,int(((h_new-self.dilation*(self.kernel-1)-1)/self.stride)+1),int(((w_new-self.dilation*(self.kernel-1)-1)/self.stride)+1),c,self.kernel*self.kernel).permute(0,1,2,4,3)
+        b,h,w,_,_ = tmp_x.shape
+        router=self.router(tmp_x.flatten(-2))
+        # router>router.mean(-1).unsqueeze(-1)
+        output = torch.zeros(b,h,w,self.out_channel).to(x.device)
+        # if self.training:
+        noise = torch.rand_like(router)
+        router+=noise.to(router.device)
+        
+        # logits,indices = router.topk(4,-1)     
+        # print(logits)
+        # print(indices) 
+        inf_matrix = torch.where(router>router.mean(-1).unsqueeze(-1),router,-torch.inf)
 
-
-import torch
-import torch.nn as nn
-
-"""# MDAE"""
-
-class GAP_conv(nn.Module):
-    def __init__(self,in_channel):
+        fill_zero_gate = F.softmax(inf_matrix/torch.sqrt(torch.tensor(inf_matrix.shape[-1]).float()),-1)
+        # print(fill_zero_gate)
+        
+        # prob = nn.Softmax(-1)(self.router(fill_zero_gate.flatten(-2)))
+        
+        # # print(self.experts[0](prob[...,0].unsqueeze(-1)*tmp_x[...,0,:]))
+        
+        for i in range(self.kernel*self.kernel):
+            output += self.experts[i](tmp_x[...,i,:])*fill_zero_gate[...,i].unsqueeze(-1)
+        return self.norm(nn.ReLU()(output.permute(0,3,1,2).contiguous()+self.conv(x)))
+class Residual_net(nn.Module):
+    def __init__(self,in_channel,out_channel,kernel=3):
         super().__init__()
         self.feature = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(in_channel,in_channel,1,bias=False),
-            nn.Sigmoid()
-        )
+            Conv_func(in_channel,out_channel,kernel = kernel),
+            Conv_func(out_channel,out_channel,kernel = kernel))
+        self.change_feature = nn.Conv2d(in_channel,out_channel,3,padding='same',bias=False)
     def forward(self,x):
-        return x*self.feature(x)
-
-x = torch.rand(2,3,5,5)
+        return self.change_feature(x)+self.feature(x)
 
 
-
-import torch
-import torch.nn as nn
-
-class MDAE(nn.Module):
-    def __init__(self):
+class Unpooling_func(nn.Module):
+    def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
-        self.gap = nn.AdaptiveAvgPool2d(1)
-        self._initialized = False
-        self.h_shape = None
-        self.w_shape = None
-        self.c_shape = None
-
-
-    def _initialize(self, x):
-        _, c, h, w = x.shape
-        if (not hasattr(self, 'conv1')) or (self.h_shape != h):
-            self.conv1 = nn.Sequential(
-                nn.Conv2d(h, h, 1, bias=False).to(x.device),
-                nn.Sigmoid()
-            )
-            self.h_shape = h
-
-            self.add_module("conv1",self.conv1)
-        if (not hasattr(self, 'conv2'))  or (self.w_shape != w):
-            self.conv2 = nn.Sequential(
-                nn.Conv2d(w, w, 1, bias=False).to(x.device),
-                nn.Sigmoid()
-            )
-            self.w_shape = w
-            self.add_module("conv2",self.conv2)
-
-        if (not hasattr(self, 'conv3')) or (self.c_shape != c):
-            self.conv3 = nn.Sequential(
-                nn.Conv2d(c, c, 1, bias=False).to(x.device),
-                nn.Sigmoid()
-            )
-            self.add_module("conv3",self.conv3)
-
-        self._initialized = True
-
-    def forward(self, x):
-        if not self._initialized:
-            self._initialize(x)
-        x_1 = self.conv1(self.gap(x.permute(0, 2, 1, 3)))
-        x_3 = self.conv2(self.gap(x.permute(0, 3, 2, 1)))
-        x_2 = self.conv3(self.gap(x))
-        return x+x_2 + x_3.permute(0, 3, 2, 1) + x_1.permute(0, 2, 1, 3)
-
-
-
-
-
-class MAC(nn.Module):
-    def __init__(self,in_channel):
-        super().__init__()
-        self.b1 = nn.Conv2d(in_channel,in_channel,3,dilation=1,padding='same',bias=True,groups = in_channel)
-        self.b2 = nn.Conv2d(in_channel,in_channel,3,dilation=3,padding='same',bias=True,groups = in_channel)
-        self.b3 = nn.Conv2d(in_channel,in_channel,3,dilation=5,padding='same',bias=True,groups = in_channel)
-        self.norm = nn.BatchNorm2d(in_channel)
-    def forward(self,x):
-        return self.norm(x + self.b1(x)+self.b2(x)+self.b3(x))
-
-
-class CPSE(nn.Module):
-    def __init__(self,in_channel):
-        super().__init__()
-        self.max_pool1d = nn.MaxPool1d(3,padding=1,stride=1)
-        self.MAC_3 = nn.Sequential(
-            MAC(in_channel=in_channel),
-            MAC(in_channel=in_channel),
-            MAC(in_channel=in_channel),
-        )
-        self.norm = nn.BatchNorm2d(in_channel)
-
-    def forward(self,x):
-        b,c,h,w =  x.shape
-        x_hori = self.max_pool1d(x.reshape(b,c*h,w)).reshape(b,c,h,w)
-        x_ver = self.max_pool1d(x.permute(0,1,3,2).reshape(b,c*w,h)).reshape(b,c,w,h).permute(0,1,3,2)
-        x_max = torch.max(x_hori,x_ver)
-        return self.norm(self.MAC_3(x_max))
-
-
-
-"""# DGF"""
-
-class DGF(nn.Module):
-    def __init__(self,in_channel_high,in_channel_low,out_channel = 64):
-        super().__init__()
-
-        self.low_feature = nn.Conv2d(in_channel_low,out_channel,3,padding='same',bias=True) # b,64,h,w
-        self.high_feature = nn.Sequential(
-            nn.ConvTranspose2d(in_channel_high,in_channel_high,2,stride=2,bias=True), # b,64,h,w
-            nn.Conv2d(in_channel_high,out_channel,3,padding='same',bias=True)
-        )
-        self.feature_concat = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(out_channel*2,out_channel,1),
-            nn.Sigmoid(),
-
-        )
-        self.norm = nn.BatchNorm2d(out_channel*2)
-
-    def forward(self,x_high_level,x_low_level):
-        '''
-        in_channel
-        low_level: b,in_channel,h,w
-        high_level : b,2*in_channel,h/2,w/2
-        '''
-        x_high = self.high_feature(x_high_level) # b,64,h,w
-        x_low = self.low_feature(x_low_level) # b,64,h,w
-        x_low_concat = x_low + x_low*self.feature_concat(torch.concat((x_low,x_high),1)) #b,64,h,w* b,64,1,1
-        return  self.norm(torch.cat((x_low_concat,x_high),1))
-
-
-"""# AWL"""
-
-class AWL(nn.Module):
-    def __init__(self,in_channel=3):
-        super().__init__()
-        self.GAP = nn.AdaptiveAvgPool2d(1)
-        self.GMP = nn.AdaptiveMaxPool2d(1)
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_channel,in_channel,kernel_size=1),
-            nn.Sigmoid(),
-            )
-        self.change_feature = nn.Conv2d(3,3,1)
-        self.out = nn.Conv2d(3,1,1)
-    def forward(self,x1,x2,x3):
-        x = self.change_feature(torch.cat((x1,x2,x3),1))
-        GAP = self.GAP(x)
-        GMP = self.GMP(x)
-
-        sum = self.conv(GMP+GAP)
-        alpha,beta,gamma=torch.chunk(sum,3,dim=1)
-        return self.out(torch.cat((x1+alpha*x1,x2+beta*x2,x3+gamma*x3),1))
-
-AWL(in_channel=3)(torch.rand(2,1,32,32),torch.rand(2,1,32,32),torch.rand(2,1,32,32)).shape
-
-"""# MODEL
-
-## CONVOLUTION
-"""
-
-class convolution(nn.Module):
-    def __init__(self,in_channel,out_channel):
-        super().__init__()
-        self.out = nn.Sequential(
-            nn.Conv2d(in_channel,out_channel,3,padding='same',bias=True),
-            nn.BatchNorm2d(out_channel),
-            nn.ReLU(),
-
-            nn.Conv2d(out_channel,out_channel,3,padding='same',bias=True,groups = out_channel),
-            nn.BatchNorm2d(out_channel),
-            nn.ReLU(),
-        )
+        self.out = nn.ConvTranspose2d(in_channel,out_channel,kernel_size= scale_factor,stride = scale_factor,bias=False)
     def forward(self,x):
         return self.out(x)
+    
 
-class change_feature_size_x4(nn.Module):
-    def __init__(self,in_channel,out_channel=1):
-        super().__init__()
-        self.out = nn.Sequential(
-            nn.ConvTranspose2d(in_channel,64,4,stride=2,padding=1,bias=True),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64,1,4,stride=2,padding=1,bias=True),
-        )
-        self.norm = nn.BatchNorm2d(1)
-    def forward(self,x):
-        return self.norm(self.out(x))
-
-class change_feature_size_x2(nn.Module):
+class down_sampling(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.out = nn.Sequential(
-            nn.ConvTranspose2d(in_channel,64,4,stride=2,padding=1,bias=True),
-            nn.ReLU(),
-            nn.Conv2d(64,1,3,padding='same',bias=True),
-
-            # nn.ConvTranspose2d(64,1,4,stride=2,padding=1,bias=False),
-        )
-        self.norm = nn.BatchNorm2d(1)
-
+        self.out =  Residual_net(in_channel,out_channel,3)
+        self.down = nn.MaxPool2d(2)
     def forward(self,x):
-        return self.norm(self.out(x))
+        out = self.out(x)
+        return out,self.down(out)
+    
 
-class change_feature_size_x1(nn.Module):
-    def __init__(self,in_channel,out_channel=1):
+class Up_sampling(nn.Module):
+    def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
-        self.out = nn.Sequential(
-            nn.Conv2d(in_channel,64,3,padding='same',bias=True),
-            nn.ReLU(),
-            nn.Conv2d(64,1,1),
+        self.up = Unpooling_func(in_channel,out_channel,scale_factor=scale_factor)
 
-            # nn.ConvTranspose2d(64,1,4,stride=2,padding=1,bias=False),
-        )
-        self.norm = nn.BatchNorm2d(1)
-
-    def forward(self,x):
-        return self.norm(self.out(x))
-"""## EDAE"""
-
-
-
+        self.out = Residual_net(out_channel*2,out_channel,3)
+    def forward(self,x,x_encode):
+        up = self.up(x)
+        return self.out(torch.cat((up,x_encode),1))

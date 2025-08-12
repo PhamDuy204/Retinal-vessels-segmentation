@@ -26,20 +26,22 @@ def sobel_transform(image):
     sb = (sb_x+sb_y)/2
     return sb
 
-def apply_gamma_correction(image, gamma=1.0):
+def apply_gamma_correction(orimage, gamma=1.0):
+    image=orimage.copy().astype(float)
     image_normalized = image / 255.0
     gamma_corrected = np.power(image_normalized, gamma)
-    gamma_corrected = np.uint8(gamma_corrected * 255)
+    gamma_corrected = np.uint8((gamma_corrected * 255).clip(0,255))
 
     return gamma_corrected
 
 def preprocessing_img(path):
     img=cv2.imread(path,1)
-    r,g,b=img.transpose(2,0,1)
+    b,g,r=img.transpose(2,0,1)
+    new_r=wiener(cv2.createCLAHE(4,(12,12)).apply(r).astype(np.float32),7)
     new_g=cv2.createCLAHE(3,(8,8)).apply(g.astype(np.uint8))
-    new_b=wiener(cv2.createCLAHE(3,(8,8)).apply(b).astype(np.float32),5)
-    new_img = np.array([r,new_g,new_b]).transpose(1,2,0).astype(np.uint8)
-    out=convert_gray(new_img).clip(0,255).astype(np.uint8)
+    new_b=wiener(cv2.createCLAHE(3,(5,5)).apply(b).astype(np.float32),3)
+    new_img = np.array([new_b,new_g,new_r]).transpose(1,2,0)
+    out=convert_gray(new_img).clip(0,255)
     return out
 
 def get_small_vessel(mask,kernel=7):
@@ -100,8 +102,14 @@ def mirror_padding_v2(image):
     if len(image.shape)<3:
         image.unsqueeze(0)
     H,W=image.shape[-2:]
-    new_h_shape=shapes[shapes>=H][0]
-    new_w_shape=shapes[shapes>=W][0]
+    if H not in shapes:
+        new_h_shape=shapes[shapes>=H][0]
+    else:
+        new_h_shape=H
+    if W not in shapes:
+        new_w_shape=shapes[shapes>=W][0]
+    else:
+        new_w_shape=W
 
     image = F.pad(image,(0,new_w_shape-W,0,new_h_shape-H),mode='reflect')
     return image

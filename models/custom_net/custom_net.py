@@ -5,66 +5,48 @@ from modules import *
 
 import sys
 import torch.nn.functional as F
-# sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-# from modules import *
 
 class SegModel(nn.Module):
-    def __init__(self, n_channel, n_class):
+    def __init__(self,in_channel,out_channel):
         super().__init__()
+        self.down_image =Conv_func(in_channel,3,2,stride=2,padding=0) #b,3,256,256
+        
+        self.encode_0 = down_sampling(3,64) #b,8,256,256/b,8,128,128
+        self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
 
-        self.n_channel = n_channel
-        self.n_class = n_class
+        self.bottle_neck = nn.Sequential(
+            Residual_net(128,256),  #b,32,64,64)
+            Residual_net(256,256)
+            )
 
-        self.conv1 = convolution(n_channel,64) #b,64,64,64
+        self.decode_1_0 = Up_sampling(256,128) #b,16,128,128
+        self.decode_1_1 = Up_sampling(256,128)#b,16,128,128
 
-        self.down1 = nn.Conv2d(64,64,kernel_size=4,stride=2,padding=1,bias=True) #b,64,32,32
+        self.up_encode_1 =  nn.ConvTranspose2d(128,64,kernel_size=2,stride=2,bias=False)
 
-        self.conv2 = convolution(64,128)    #b,128,32,32
-        self.down2 = nn.Conv2d(128,128,kernel_size=4,stride=2,padding=1,bias=True) #b,128,16,16
+        self.decode_0_0  = Up_sampling(128,64)#b,8,256,256
+        self.decode_0_1  = Up_sampling(128,64)#b,8,256,256
 
-        self.conv3 = convolution(128,256)   #b,256,16,16
-        self.down3 = nn.Conv2d(256,256,kernel_size=4,stride=2,padding=1,bias=True) #b,256,8,8
-
-        self.bottle_neck = CPSE(256) #b,256,8,8
-
-        self.DGF_3 = DGF(256,256) # b,128,16,16
-        self.MDAE_3 = MDAE()
-
-        self.DGF_2 = DGF(128,128) #b,128,128
-        self.MDAE_2 = MDAE()
-
-        self.DGF_1 = DGF(128,64)
-        self.MDAE_1 = MDAE()
-
-        # self.DGF_2 = DGF(,128)
-        self.b3 = change_feature_size_x4(128,1)
-        self.b2 = change_feature_size_x2(128,1)
-        self.b1 = change_feature_size_x1(128,1)
-
-        self.AWL_func = AWL(3)
-
+        self.out = nn.Sequential(
+            nn.Conv2d(64*2,64,1,bias=False),
+            Unpooling_func(64,out_channel,2),
+            nn.Sigmoid()
+        )
     def forward(self,x):
 
-        x_conv1 = self.conv1(x)  #b,64,606,700
-        x_down1 = self.down1(x_conv1) #b,64,304,350
+        down_image = self.down_image(x) #b,3,256,256
+        
+        conv_0,down_0 = self.encode_0(down_image) #b,8,256,256/b,8,128,128
+        conv_1,down_1 = self.encode_1(down_0) #b,16,128,128/b,16,64,64
 
-        x_conv2 = self.conv2(x_down1)  #b,128,304,350
-        x_down2 = self.down2(x_conv2)    #b,128,158,176
+        b_neck = self.bottle_neck(down_1) #b,32,64,64
 
-        x_conv3 = self.conv3(x_down2) #b,256,158,176
-        x_down3 = self.down3(x_conv3) #b,256,80,88
+        up_1_0 = self.decode_1_0(b_neck,conv_1)#b,16,128,128
+        up_1_1 = self.decode_1_1(b_neck,conv_1)#b,16,128,128
 
-        bottle_neck = self.bottle_neck(x_down3) #b,256,88,88
+        up_0_0 = self.decode_0_0(up_1_0,self.up_encode_1(conv_1))
+        up_0_1 = self.decode_0_1(up_1_1,conv_0)
 
-        x_DGF_3 = self.DGF_3(bottle_neck,x_conv3)  #b,256,158,176
-        # print(x_DGF_3.shape)
-        x_MDAE_3 =  self.MDAE_3(x_DGF_3)  #b,256,158,176
+        merge = torch.cat((up_0_0,up_0_1),1)
 
-        x_DGF_2 = self.DGF_2(x_DGF_3,x_conv2)
-        x_MDAE_2 = self.MDAE_2(x_DGF_2)
-
-        x_DGF_1 = self.DGF_1(x_DGF_2,x_conv1)
-        x_MDAE_1 = self.MDAE_1(x_DGF_1)
-
-        out = torch.sigmoid(self.AWL_func(self.b3(x_MDAE_3),self.b2(x_MDAE_2),self.b1(x_MDAE_1)))
-        return out
+        return self.out(merge)

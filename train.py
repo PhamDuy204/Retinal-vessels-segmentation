@@ -85,7 +85,7 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
-                print(image.shape)
+                # print(image.shape)
                 if args.chunk_size is None:
 
                     chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size),1)
@@ -126,6 +126,7 @@ class Trainer:
                 if scores[method]>best_eval_score[best_method]:
                     best_eval_score[best_method]=scores[method]
             avg_metric = (acc + f1 + iou + recall + spe + auc+dice) / 7
+            best_metric_eval = (f1 + iou+auc)/3
             with open("temp.log", "a") as f:
                 f.write(
                     f"[Epoch {e+1}/{epochs}] Dataset: {self.name} | "
@@ -147,8 +148,8 @@ class Trainer:
                 "val_avg_metric": avg_metric,
                 "lr": current_lr,
             })
-            if avg_metric > best_avg:
-                best_avg = avg_metric
+            if best_metric_eval > best_avg:
+                best_avg = best_metric_eval
                 best_metrics = (acc, f1, iou, recall, spe, auc)
                 best_params=self.model.state_dict()
                 save_e = e
@@ -169,14 +170,20 @@ class Trainer:
                 wandb.save(save_path)
                 with torch.no_grad():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
+
+                    ex_image=mirror_padding_v2(ex_image)
+                    ex_edge=mirror_padding_v2(ex_edge)
+
                     B,C,H,W = ex_image.shape           
                     ex_image=ex_image.cuda()
                     ex_mask=ex_mask.cuda()
                     ex_edge=ex_edge.cuda()
+
+
+
                     stride=None
                     if self.patch and self.type_split!='random':
-                        condition=int(H>W)
-                        num_patch=(21+condition,21+(1-condition))
+                        num_patch=(32,32)
                         ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
                         ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
                         stride=tmp_stride
@@ -313,7 +320,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=1e-7)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=2e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,
