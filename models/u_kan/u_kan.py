@@ -1,26 +1,14 @@
 import torch
 from torch import nn
 import torch
-import torchvision
 from torch import nn
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
-from torchvision import transforms
-from torchvision.utils import save_image
 import torch.nn.functional as F
-import os
-import matplotlib.pyplot as plt
 from utils import *
 
-import timm
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-import types
 import math
-from abc import ABCMeta, abstractmethod
-# from mmcv.cnn import ConvModule
-from pdb import set_trace as st
 
-from modules import KANLinear, KAN
+from .modules import KANLinear, KAN
 from torch.nn import init
 
 
@@ -77,7 +65,6 @@ class KANLayer(nn.Module):
                         grid_eps=grid_eps,
                         grid_range=grid_range,
                     )
-            # # TODO   
             # self.fc4 = KANLinear(
             #             hidden_features,
             #             out_features,
@@ -96,7 +83,6 @@ class KANLayer(nn.Module):
             self.fc2 = nn.Linear(hidden_features, out_features)
             self.fc3 = nn.Linear(hidden_features, out_features)
 
-        # TODO
         # self.fc1 = nn.Linear(in_features, hidden_features)
 
 
@@ -104,7 +90,6 @@ class KANLayer(nn.Module):
         self.dwconv_2 = DW_bn_relu(hidden_features)
         self.dwconv_3 = DW_bn_relu(hidden_features)
 
-        # # TODO
         # self.dwconv_4 = DW_bn_relu(hidden_features)
     
         self.drop = nn.Dropout(drop)
