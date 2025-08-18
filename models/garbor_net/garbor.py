@@ -46,7 +46,6 @@ class GaborConv(nn.Module):
     lamda = 7.0      # Bước sóng
     gamma = 0.3        # Aspect ratio
     psi = 0            # Pha
-
     """
     def __init__(self, in_channels, out_channels, kernel_size=11, orientations=None, lam=7.0, 
                  sigma=3.0, gamma=0.3, phi=0.0, stride=1, padding=None, bias=False):
