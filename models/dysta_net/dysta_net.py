@@ -34,6 +34,7 @@ class SegModel(nn.Module):
         )
 
         self.branch2 = Up_sampling(128,64)
+        
     def forward(self,x):
 
         down_image = self.down_image(x) #b,3,256,256

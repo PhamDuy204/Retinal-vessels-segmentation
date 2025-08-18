@@ -36,8 +36,8 @@ class Unpooling_func(nn.Module):
 class down_sampling(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.out =  Conv_func(in_channel,out_channel,3)
-        self.down = nn.MaxPool2d(2)
+        self.out =  Residual_net(in_channel,out_channel,3)
+        self.down = nn.Conv2d(out_channel,out_channel,kernel_size=2,stride=2,bias=False)
     def forward(self,x):
         out = self.out(x)
         return out,self.down(out)
@@ -49,6 +49,10 @@ class Up_sampling(nn.Module):
         self.up = Unpooling_func(in_channel,out_channel,scale_factor=scale_factor)
 
         self.out = Conv_func(out_channel*2,out_channel,3)
+        self.skip_connect = nn.Sequential(
+            nn.Conv2d(out_channel,out_channel,kernel_size=3,padding='same',bias=False),
+            nn.GroupNorm(out_channel,out_channel,affine=False),
+        )
     def forward(self,x,x_encode):
         up = self.up(x)
-        return self.out(torch.cat((up,x_encode),1))
+        return self.out(torch.cat((up,self.skip_connect(x_encode)),1))
