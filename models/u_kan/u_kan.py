@@ -271,13 +271,13 @@ class D_ConvLayer(nn.Module):
 
 
 class SegModel(nn.Module):
-    def __init__(self, num_classes, input_channels=3, deep_supervision=False, img_size=224, patch_size=16, in_chans=3, embed_dims=[256, 320, 512], no_kan=False,
+    def __init__(self, num_classes, input_channels=1, deep_supervision=False, img_size=224, patch_size=16, in_chans=1, embed_dims=[256, 320, 512], no_kan=False,
     drop_rate=0., drop_path_rate=0., norm_layer=nn.LayerNorm, depths=[1, 1, 1], **kwargs):
         super().__init__()
 
         kan_input_dim = embed_dims[0]
 
-        self.encoder1 = ConvLayer(3, kan_input_dim//8)  
+        self.encoder1 = ConvLayer(input_channels, kan_input_dim//8) # Sử dụng input_channels ở đây
         self.encoder2 = ConvLayer(kan_input_dim//8, kan_input_dim//4)  
         self.encoder3 = ConvLayer(kan_input_dim//4, kan_input_dim)
 
