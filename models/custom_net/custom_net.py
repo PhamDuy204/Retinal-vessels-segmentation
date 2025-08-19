@@ -9,14 +9,13 @@ import torch.nn.functional as F
 class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.down_image =Conv_func(in_channel,3,2,stride=2,padding=0) #b,3,256,256
+        self.down_image =nn.Conv2d(in_channel,32,2,stride=2,padding=0) #b,3,256,256
         
-        self.encode_0 = down_sampling(3,64) #b,8,256,256/b,8,128,128
+        self.encode_0 = down_sampling(32,64) #b,8,256,256/b,8,128,128
         self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
 
         self.bottle_neck = nn.Sequential(
             Residual_net(128,256),  #b,32,64,64)
-            Residual_net(256,256)
             )
 
         self.decode_1_0 = Up_sampling(256,128) #b,16,128,128
@@ -28,8 +27,9 @@ class SegModel(nn.Module):
         self.decode_0_1  = Up_sampling(128,64)#b,8,256,256
 
         self.out = nn.Sequential(
-            nn.Conv2d(64*2,64,1,bias=False),
+            Residual_net(64*2,64),
             Unpooling_func(64,out_channel,2),
+            
             nn.Sigmoid()
         )
     def forward(self,x):
