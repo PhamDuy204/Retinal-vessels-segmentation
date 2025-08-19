@@ -38,7 +38,7 @@ class CustomTrainDataset(Dataset):
             t = self.image_transforms(image = image,mask=mask)
             image = t['image']
             mask  = t['mask']
-            edge = ToTensorV2()(image=sobel_transform(image.clone().detach().cpu().numpy().transpose(1,2,0)))['image']
+            edge = ToTensorV2()(image=sobel_transform(image.clone().detach().permute(1,2,0).mean(-1).unsqueeze(-1).cpu().numpy()))['image']
             if self.with_patches:
                 # print(image.dtype)
                 if self.type_split=='random':
@@ -57,22 +57,25 @@ class CustomTrainDataset(Dataset):
                     # print(edge.shape)
                     # h_i,w_i=image.shape[-2:]
                     # condition=int(h_i>w_i)
-                    num_patch=(32,32)
+                    num_patch=(64,64)
 
                     patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
                     patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
+            
                     patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
 
                     filter=patches_mask.sum((-1,-2))>=5
                     # print(filter.shape)
-                    patches_image=patches_image[filter].unsqueeze(1)
+                    patches_image=patches_image.unsqueeze(1)[filter]
                     # print(patches_image.shape)
-                    patches_mask=patches_mask[filter].unsqueeze(1)
+                    patches_mask=patches_mask[filter]
                     patches_edge=patches_edge[filter].unsqueeze(1)
+
+                num_sample = torch.randperm(len(patches_image))[:650]
                 return {
-                    'image':patches_image,
-                    'mask':patches_mask.long().squeeze(),
-                    'edge':patches_edge
+                    'image':patches_image[num_sample],
+                    'mask':patches_mask.long().squeeze()[num_sample],
+                    'edge':patches_edge[num_sample]
                 }
 
         else:

@@ -81,6 +81,15 @@ class Trainer:
             training_loss=0
             for sample in tqdm(self.train_loader):
                 image,mask,edge=sample.values()
+
+                random_index =  torch.randperm(image.size(0))
+
+                image=image[random_index]
+                edge=edge[random_index]
+                mask=mask[random_index]
+                # print(image.shape)
+                # print(mask.shape)
+                # print(edge.shape)
                 if len(image.shape)>4:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
@@ -154,9 +163,10 @@ class Trainer:
                 best_params=self.model.state_dict()
                 save_e = e
         if best_metrics and best_params:
-                best_model=load_model_class(args.model)(1,1).cuda()
+                torch.cuda.empty_cache()
+                best_model=load_model_class(args.model)(3,1).cuda()
                 if self.patch:
-                    _=best_model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
+                    _=best_model(torch.rand(1,3,args.patch_size,args.patch_size).cuda())
                 best_model.zero_grad()
                 best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
                 best_model.eval()
@@ -168,7 +178,7 @@ class Trainer:
                 artifact.add_file(save_path)
                 wandb.log_artifact(artifact)
                 wandb.save(save_path)
-                with torch.no_grad():                                                                                                                                                        
+                with torch.inference_mode():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
 
                     ex_image=mirror_padding_v2(ex_image)
@@ -183,14 +193,25 @@ class Trainer:
 
                     stride=None
                     if self.patch and self.type_split!='random':
-                        num_patch=(32,32)
+                        num_patch=(64,64)
                         ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
                         ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
                         stride=tmp_stride
                         if len(ex_image.shape)>4:
                             ex_image=ex_image.flatten(0,1)
                             ex_edge=ex_edge.flatten(0,1)
-                    
+                    out_sample=[]
+                    chunk_size = max(ex_image.shape[0]//200,1)
+                    chunk_image = torch.chunk(ex_image,chunk_size,0)
+                    chunk_edge = torch.chunk(ex_edge,chunk_size,0)
+                    for chunk in zip(chunk_image,chunk_edge):
+                        c_image,c_edge=chunk
+                        if check_model_forward_args(best_model) == 2:
+                            prob = best_model(c_image, c_edge)
+                        else:
+                            prob = best_model(c_image)
+                        out_sample.append(prob)
+                    ex_pred_mask= torch.cat(out_sample,0)
                     # if self.patch:
                     #     # ex_image = window_partition(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
                     #     # ex_edge = window_partition(ex_edge.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
@@ -203,10 +224,10 @@ class Trainer:
                     # for chunk in zip(chunk_image,chunk_edge):
                     #     c_image,c_edge=chunk
 
-                    if check_model_forward_args(best_model) == 2:
-                        ex_pred_mask = best_model(ex_image, ex_edge)
-                    else:
-                        ex_pred_mask = best_model(ex_image)
+                    # if check_model_forward_args(best_model) == 2:
+                    #     ex_pred_mask = best_model(ex_image, ex_edge)
+                    # else:
+                    #     ex_pred_mask = best_model(ex_image)
                     #     out_sample.append(prob)
                     # ex_pred_mask= torch.cat(out_sample,0)
                     # if check_model_forward_args(self.model)==2:
@@ -234,7 +255,7 @@ class Trainer:
                     # print(ex_pred_mask.shape)
                     # print(ex_image.shape)
                     for i in range(len(ex_image)):
-                        image_np = ex_image[i].squeeze().detach().cpu().numpy()
+                        image_np = ex_image[i].permute(1,2,0).mean(-1).squeeze().detach().cpu().numpy()
                         if image_np.max() <= 1.0:
                             image_np=image_np*0.5+0.5
                             image_np = (image_np * 255).astype(np.uint8)
@@ -293,9 +314,9 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         name         = info['name']
         patch = info['patches']
         seg_model=load_model_class(args.model)
-        model = seg_model(1,1)
+        model = seg_model(3,1)
         if patch:
-            _=model(torch.rand(1,1,args.patch_size,args.patch_size))
+            _=model(torch.rand(1,3,args.patch_size,args.patch_size))
         model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__

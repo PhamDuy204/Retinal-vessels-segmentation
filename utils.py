@@ -37,11 +37,11 @@ def apply_gamma_correction(orimage, gamma=1.0):
 def preprocessing_img(path):
     img=cv2.imread(path,1)
     b,g,r=img.transpose(2,0,1)
-    new_r=wiener(cv2.createCLAHE(4,(12,12)).apply(r).astype(np.float32),7)
-    new_g=cv2.createCLAHE(3,(8,8)).apply(g.astype(np.uint8))
-    new_b=wiener(cv2.createCLAHE(3,(5,5)).apply(b).astype(np.float32),3)
+    new_r=apply_gamma_correction(wiener(cv2.createCLAHE(4,(12,12)).apply(r).astype(np.float32),7),2)
+    new_g=cv2.createCLAHE(4,(12,12)).apply(g.astype(np.uint8))
+    new_b=wiener(cv2.createCLAHE(4,(12,12)).apply(b).astype(np.float32),7)
     new_img = np.array([new_b,new_g,new_r]).transpose(1,2,0)
-    out=convert_gray(new_img).clip(0,255)
+    out=new_img.clip(0,255)
     return out
 
 def get_small_vessel(mask,kernel=7):
