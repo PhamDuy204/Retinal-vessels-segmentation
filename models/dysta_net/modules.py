@@ -3,16 +3,27 @@ import torch.nn as nn
 
 
 
+class aulu(nn.Module):
+    def __init__(self,beta):
+        super().__init__()
+        self.beta = beta
+    def forward(self,x):
+        rs = torch.where(x >= 0,x*nn.Sigmoid()(x*self.beta**2),x*nn.Sigmoid()(x*(1-self.beta)**2))
+        return rs
+
+
 class Conv_func(nn.Module):
     def __init__(self,in_channel,out_channel,kernel=3):
         super().__init__()
         self.feature = nn.Sequential(
             nn.Conv2d(in_channel,out_channel,kernel_size=kernel,padding='same',bias=False),
             nn.GroupNorm(out_channel,out_channel,affine=False),
-            nn.ReLU(),
+            aulu(0.7),
             )
     def forward(self,x):
         return self.feature(x)
+
+
 
 class Residual_net(nn.Module):
     def __init__(self,in_channel,out_channel,kernel=3):
@@ -48,11 +59,7 @@ class Up_sampling(nn.Module):
         super().__init__()
         self.up = Unpooling_func(in_channel,out_channel,scale_factor=scale_factor)
 
-        self.out = Conv_func(out_channel*2,out_channel,3)
-        self.skip_connect = nn.Sequential(
-            nn.Conv2d(out_channel,out_channel,kernel_size=3,padding='same',bias=False),
-            nn.GroupNorm(out_channel,out_channel,affine=False),
-        )
+        self.out = Residual_net(out_channel*2,out_channel,3)
     def forward(self,x,x_encode):
         up = self.up(x)
-        return self.out(torch.cat((up,self.skip_connect(x_encode)),1))
+        return self.out(torch.cat((up,x_encode),1))
