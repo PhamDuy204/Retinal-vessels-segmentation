@@ -8,7 +8,7 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__() 
         
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding='same')
-        self. 
+        self.relu1 = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding='same')
         pass
 
