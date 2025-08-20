@@ -45,17 +45,18 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
 
                 # image = window_partition(image.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
                 # edge = window_partition(edge.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
-            chunk_size = max(image.shape[0]//200,1)
-            chunk_image = torch.chunk(image,chunk_size,0)
-            chunk_edge = torch.chunk(edge,chunk_size,0)
-            for chunk in zip(chunk_image,chunk_edge):
-                c_image,c_edge=chunk
-                if check_model_forward_args(model) == 2:
-                    prob = model(c_image, c_edge)
-                else:
-                    prob = model(c_image)
-                out_sample.append(prob)
-            prob= torch.cat(out_sample,0)
+            # chunk_size = max(image.shape[0]//500,1)
+            # chunk_image = torch.chunk(image,chunk_size,0)
+            # chunk_edge = torch.chunk(edge,chunk_size,0)
+            # for chunk in zip(chunk_image,chunk_edge):
+            #     c_image,c_edge=chunk
+            # print(image.shape)
+            if check_model_forward_args(model) == 2:
+                prob = model(image, edge)
+            else:
+                prob = model(image)
+                # out_sample.append(prob)
+            # prob= torch.cat(out_sample,0)
             if patch:
                 # prob = kornia.contrib.combine_tensor_patches(prob.view(B,-1,1,patch_size,patch_size), original_size=(H,W),window_size=patch_size,stride=patch_size//4)
                 # prob=window_reverse(prob.permute(0,2,3,1).contiguous(),[patch_size,patch_size],[H,W]).permute(0,3,1,2).contiguous()

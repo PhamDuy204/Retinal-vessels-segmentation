@@ -7,8 +7,9 @@ class ResNet(nn.Module):
     def __init__(self, in_channels, out_channels): 
         super(ResNet, self).__init__() 
         
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding='same')
-        self.conv2 = nn.Conv
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding='same')
+        self. 
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding='same')
         pass
 
     def forward(self, X): 
