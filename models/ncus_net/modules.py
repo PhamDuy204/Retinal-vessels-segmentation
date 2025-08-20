@@ -6,9 +6,12 @@ import torch.nn.functional as F
 class ResNet(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(ResNet, self).__init__() 
+        
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding='same')
+        self.conv2 = nn.Conv
         pass
 
-    def forward(self): 
+    def forward(self, X): 
         pass 
 
 
@@ -30,5 +33,5 @@ class VGG(nn.Module):
         X = self.conv2(X) 
         X = self.relu2(X) 
 
-        
+
         
