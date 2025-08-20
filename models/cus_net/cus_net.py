@@ -36,7 +36,7 @@ class SegModel(nn.Module):
         # Out 
         self.out_conv = nn.Sequential(
             PWConv(in_channels=64, out_channels=num_classes), 
-            nn.ReLU(inplace=True)
+            nn.Sigmoid(inplace=True)
         )
 
     def forward(self, X): 
