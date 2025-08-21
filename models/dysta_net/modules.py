@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
+from timm.models.swin_transformer import window_partition,window_reverse
 
 # class CustomActivation(nn.Module):
 #   def __init__(self):
@@ -97,6 +98,76 @@ class Conv_func_1(nn.Module):
             output=nn.ReLU()(output)
         return output
 
+class deepwide_block(nn.Module):
+    def __init__(self,in_channel,out_channel,kernel=3,stride=1,dilation=1):
+        super().__init__()
+        self.out = nn.Sequential(
+            nn.Conv2d(in_channel,out_channel,1,bias=False),
+            nn.ReLU(),
+            nn.Conv2d(out_channel,out_channel,kernel,padding='same',stride=stride,groups=out_channel,dilation=dilation,bias=False)
+        )
+        self.change = nn.Conv2d(in_channel,out_channel,1)
+    def forward(self,x):
+        return self.change(x)+self.out(x)
+
+class multi_scope(nn.Module):
+    def __init__(self,in_channel,out_channel,kernel=3):
+        super().__init__()
+        self.b1 = deepwide_block(in_channel,out_channel,kernel,dilation=1)
+        self.b2 = deepwide_block(in_channel,out_channel,kernel,dilation=3)
+        self.b3 = deepwide_block(in_channel,out_channel,kernel,dilation=5)
+
+        self.change = nn.Conv2d(3*out_channel,out_channel,1,bias=False)
+    def forward(self,x):
+        return self.change(torch.cat((self.b1(x),self.b2(x),self.b3(x)),1))
+    
+class multi_scope_block(nn.Module):
+    def __init__(self,in_channel,out_channel,kernel=3):
+        super().__init__()
+        
+        self.branch = multi_scope(in_channel,out_channel,kernel)
+        self.change_feature = nn.Conv2d(in_channel,out_channel,1,bias=False)
+        self.change = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+    def forward(self,x):
+        # new_x = self.change(torch.cat((x,x.permute(0,1,3,2)),1))
+        
+        return self.change_feature(x)+self.branch(x)
+
+class aloalo(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.b1_0 = nn.AdaptiveAvgPool2d(1)
+        self.b1_1 = nn.AdaptiveMaxPool2d(1)
+        
+        self.conv_0 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+        self.conv_1 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+        self.conv_2 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+        self.conv_3 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+
+        self.out = nn.Conv2d(2*in_channel,in_channel,1,bias=False)
+    def forward(self,x):
+        b,c,h,w = x.shape
+        new_x = window_partition(x.permute(0,2,3,1),[2,2]).permute(0,3,1,2)
+        avg_new_x = self.conv_0(self.b1_0(new_x)*new_x)
+        max_new_x = self.conv_1(self.b1_1(new_x)*new_x)
+        sum_new_x = window_reverse((avg_new_x+max_new_x).permute(0,2,3,1),[2,2],h,w).permute(0,3,1,2)
+        avg_x = self.conv_2(self.b1_0(x)*x)
+        max_x = self.conv_3(self.b1_1(x)*x)
+        sum_x = avg_x+max_x
+        return x+self.out(torch.cat((sum_new_x,sum_x),1))
+
+
+class ulaula(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.out = nn.Sequential(
+            # multi_scope_block(in_channel,out_channel,3),
+            aloalo(in_channel)
+        )
+    def forward(self,x):
+        return self.out(x)
+
+
 class Residual_net_1(nn.Module):
     def __init__(self,in_channel,out_channel,kernel=3):
         super().__init__()
@@ -143,22 +214,27 @@ class down_sampling(nn.Module):
         super().__init__()
         self.out =  nn.Sequential(
             Residual_net(in_channel,out_channel,3),
-            # Residual_net(out_channel,out_channel,3)
+            ulaula(out_channel),
+            Residual_net(out_channel,out_channel,3)
 
             )
-        self.down = Conv_func_1(out_channel,out_channel,kernel=2,padding=0,stride=2,activation=False)
-        # self.down = nn.Conv2d(out_channel,out_channel,kernel_size=2,stride=2,bias=False)
+        # self.down = Conv_func_1(out_channel,out_channel,kernel=2,padding=0,stride=2,activation=False)
+        self.down = nn.Conv2d(out_channel,out_channel,kernel_size=2,stride=2,bias=False)
     def forward(self,x):
         out = self.out(x)
         return out,self.down(out)
     
+
+
 
 class Up_sampling(nn.Module):
     def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
         self.up = Unpooling_func(in_channel,out_channel,scale_factor=scale_factor)
 
-        self.out =  Residual_net(out_channel*2,out_channel,3)
+        self.out =  nn.Sequential(
+            Residual_net(out_channel*2,out_channel,3)
+            )
     def forward(self,x,x_encode):
         up = self.up(x)
         return self.out(torch.cat((up,x_encode),1))
@@ -175,3 +251,4 @@ class model_exchange_feature(nn.Module):
         new_x1 = torch.cat((x1_1,x2_2),1)
         new_x2 = torch.cat((x1_2,x2_1),1)
         return self.rs1(new_x1),self.rs2(new_x2)
+
