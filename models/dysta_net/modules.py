@@ -252,3 +252,11 @@ class model_exchange_feature(nn.Module):
         new_x2 = torch.cat((x1_2,x2_1),1)
         return self.rs1(new_x1),self.rs2(new_x2)
 
+class kame_func(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super().__init__()
+        self.conv_tran = nn.ConvTranspose2d(in_channel,out_channel,2,2,bias=False)
+        self.change = nn.Conv2d(out_channel*2,out_channel,1,bias=False)
+
+    def forward(self,low_size,high_size):
+        return self.change(torch.cat((self.conv_tran(low_size),high_size),1))
