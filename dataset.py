@@ -8,6 +8,28 @@ import glob
 from torch.utils.data import Dataset
 from utils import *
 from albumentations.pytorch import ToTensorV2
+import kornia.augmentation as K
+# from torchvision.transforms import functional as F
+# from torchvision.transforms import InterpolationMode
+# import torchvision
+import random
+
+# class RandomResizedCropBoth:
+#     def __init__(self, size, scale=(0.08, 1.0), ratio=(3/4, 4/3),p=0.5):
+#         self.size = size
+#         self.scale = scale
+#         self.ratio = ratio
+#         self.p=p
+
+#     def __call__(self, image, mask,edge=None):
+#         if np.random.rand()>self.p:
+#             i, j, h, w = torchvision.transforms.RandomResizedCrop.get_params(
+#                 image, scale=self.scale, ratio=self.ratio
+#             )
+#             image = F.resized_crop(image, i, j, h, w, self.size, InterpolationMode.BILINEAR)
+#             mask  = F.resized_crop(mask,  i, j, h, w, self.size, InterpolationMode.NEAREST)
+#             edge  = F.resized_crop(edge,  i, j, h, w, self.size, InterpolationMode.NEAREST)
+#         return image, mask,edge
 
 class CustomTrainDataset(Dataset):
     def __init__(self,root_path,img_transforms=None,with_patches = False,num_patches=500,patch_size=64,type_split='random'):
@@ -22,6 +44,7 @@ class CustomTrainDataset(Dataset):
         self.num_patches=num_patches
         self.patch_size=patch_size
         self.type_split=type_split
+        self.index_patch=[[]for _ in range(len(self.image_paths))]
     def get_name(self):
         return self.name
     def __len__(self):
@@ -71,7 +94,25 @@ class CustomTrainDataset(Dataset):
                     patches_mask=patches_mask[filter]
                     patches_edge=patches_edge[filter].unsqueeze(1)
 
-                num_sample = torch.randperm(len(patches_image))[:650]
+                num_sample_index=[i for i in range(len(patches_image)) if i not in self.index_patch[index]]
+                random.shuffle(num_sample_index)
+                num_sample = num_sample_index[:670]
+                self.index_patch[index].extend(num_sample)
+                # crop_transfroms=RandomResizedCropBoth((self.patch_size,self.patch_size))
+                # device ='cuda' if torch.cuda.is_available() else 'cpu'
+                # aug =  K.AugmentationSequential(K.RandomPlanckianJitter(mode='CIED', p=0.7,keepdim=True),
+                #                                 K.RandomEqualize(p=0.7,keepdim=True)).to(device)
+                # #                                 ,data_keys=["input", "mask"]).to(device)
+                # aug=K.RandomPlanckianJitter(mode='CIED', p=0.9).to(device)
+                if len(patches_image)-len(self.index_patch[index])<800:
+                    self.index_patch[index]=[]
+                if len(num_sample)<670:
+                    random.shuffle(self.index_patch[index])
+                    num_sample.extend((self.index_patch[index][:670]))
+                    num_sample=num_sample[:670]
+                # patches_image,patches_mask=aug(patches_image.to(device),patches_mask.to(device))
+                # patches_image=aug_2(patches_image)
+                # print(torch.unique(patches_mask))
                 return {
                     'image':patches_image[num_sample],
                     'mask':patches_mask.long().squeeze()[num_sample],
