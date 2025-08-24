@@ -109,6 +109,20 @@ class Trainer:
                     n_image = n_image.cuda()
                     n_mask = n_mask.cuda()
                     n_egde = n_egde.cuda()
+
+                    # c_mask_0,c_mask_1=n_mask.chunk(2,dim=0)
+                    # c_image_0,c_image_1=n_image.chunk(2,dim=0)
+                    # c_edge_0,c_edge_1=n_egde.chunk(2,dim=0)
+
+                    # b_mask=(c_mask_0+c_mask_1)
+                    # b_mask=torch.where(b_mask==2,1,b_mask)
+                    # b_image=(c_image_0 + c_image_1)/2
+                    # b_edge=(c_edge_0 + c_edge_1)/2
+
+                    # n_image=torch.cat((n_image,b_image),0)
+                    # n_mask=torch.cat((n_mask,b_mask),0)
+                    # n_egde=torch.cat((n_egde,b_edge),0)
+
                     if check_model_forward_args(self.model)==2:
                         pred_mask = self.model(n_image,n_egde)
                     else:
@@ -341,7 +355,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=2e-6)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=3e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,

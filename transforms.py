@@ -5,14 +5,14 @@ import cv2
 def get_train_transforms():
     return A.Compose([
         A.Resize(512,512,interpolation=cv2.INTER_AREA),
-        A.Rotate(limit=30, p=0.5),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
+        A.Rotate(limit=45, p=0.7),
+        A.HorizontalFlip(p=0.7),
+        A.VerticalFlip(p=0.7),
         
         A.Compose([
             A.HorizontalFlip(p=1.0),
             A.VerticalFlip(p=1.0)
-        ], p=0.25),
+        ], p=0.5),
         A.Normalize(mean=(0.5,),std=(0.5,)),
         ToTensorV2()
     ])
@@ -25,14 +25,14 @@ def get_test_transforms():
 
 def get_train_patch_transforms():
     return A.Compose([
-        A.Rotate(limit=30, p=0.5),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
+        A.Rotate(limit=45, p=0.7),
+        A.HorizontalFlip(p=0.7),
+        A.VerticalFlip(p=0.7),
         
         A.Compose([
             A.HorizontalFlip(p=1.0),
             A.VerticalFlip(p=1.0)
-        ], p=0.25),
+        ], p=0.5),
         A.Normalize(mean=(0.5,),std=(0.5,)),
         ToTensorV2()
     ])
