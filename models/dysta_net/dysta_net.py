@@ -37,8 +37,21 @@ class SegModel(nn.Module):
         self.change_down = nn.Conv2d(128*2,128,1,bias=False)
         self.up = nn.ConvTranspose2d(128,64,2,2,bias=False)
         self.change_up = nn.Conv2d(64*2,64,1,bias=False)
+        self.multi = nn.Sequential(
+            multi_scope_block(1,64),
+            Residual_net(64,64),
+            nn.GELU()
+        )
 
     def forward(self,x):
+
+        # dwt = DWTForward(J=1, wave='haar')  
+        # J = số level decomposition, wave = loại wavelet
+
+        # Thực hiện DWT
+        # Yl, Yh = dwt(x)
+        # frequency = torch.mean(Yh[0],2)
+
 
         down_image = self.down_image(x) #b,3,256,256
         
@@ -56,3 +69,4 @@ class SegModel(nn.Module):
         merge = torch.cat((up_0_0,up_0_1),1)
         out = self.out(merge)
         return out
+
