@@ -37,11 +37,7 @@ class SegModel(nn.Module):
         self.change_down = nn.Conv2d(128*2,128,1,bias=False)
         self.up = nn.ConvTranspose2d(128,64,2,2,bias=False)
         self.change_up = nn.Conv2d(64*2,64,1,bias=False)
-        self.multi = nn.Sequential(
-            multi_scope_block(1,64),
-            Residual_net(64,64),
-            nn.GELU()
-        )
+        
 
     def forward(self,x):
 
@@ -63,7 +59,7 @@ class SegModel(nn.Module):
         up_1_0 = self.decode_1_0(b_neck,self.change_down(torch.cat((conv_1,self.down(conv_0)),1)))#b,16,128,128
         up_1_1 = self.decode_1_1(b_neck,conv_1)#b,16,128,128
 
-        up_0_0 = self.decode_0_0(up_1_0,self.change_up(torch.cat((self.up_encode_1(conv_1),self.up(conv_1)),1)))
+        up_0_0 = self.decode_0_0(up_1_0,self.up_encode_1(conv_1))
         up_0_1 = self.decode_0_1(up_1_1,conv_0)
 
         merge = torch.cat((up_0_0,up_0_1),1)

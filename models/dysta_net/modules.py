@@ -178,6 +178,24 @@ class Conv_func_1(nn.Module):
 #     def forward(self,x):
 #         return self.change_feature(x)+self.feature(x)
 
+class se_block_win(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.out = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(in_channel,int(in_channel/4),1,bias=False),
+            nn.ReLU(),
+            nn.Conv2d(int(in_channel/4),in_channel,1,bias=False),
+            nn.ReLU(),
+            nn.Sigmoid()
+        )
+    def forward(self,x):
+        b,c,h,w = x.shape
+        x_new = window_partition(x.permute(0,2,3,1),[1,1]).permute(0,3,1,2)
+        x_new = self.out(x_new)
+        x_reverse = window_reverse((x_new).permute(0,2,3,1),[1,1],h,w).permute(0,3,1,2) 
+        return x+x_reverse
+
 
 class Conv_func(nn.Module):
     def __init__(self,in_channel,out_channel,kernel=3):
@@ -254,3 +272,15 @@ class Up_sampling(nn.Module):
 
 #     def forward(self,low_size,high_size):
 #         return self.change(torch.cat((self.conv_tran(low_size),high_size),1))
+
+class Up_sampling_sample(nn.Module):
+    def __init__(self,in_channel,out_channel,scale_factor = 2):
+        super().__init__()
+        self.up = nn.Sequential(
+            nn.UpsamplingBilinear2d(scale_factor=2),
+            nn.Conv2d(in_channel,out_channel,3,padding='same',bias=False))
+
+        self.out = Residual_net(out_channel*2,out_channel,3)
+    def forward(self,x,x_encode):
+        up = self.up(x)
+        return self.out(torch.cat((up,x_encode),1))
