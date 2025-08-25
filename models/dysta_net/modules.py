@@ -133,39 +133,39 @@ class Conv_func_1(nn.Module):
         
 #         return self.change_feature(x)+self.branch(x)
 
-# class aloalo(nn.Module):
-#     def __init__(self,in_channel):
-#         super().__init__()
-#         self.b1_0 = nn.AdaptiveAvgPool2d(1)
-#         self.b1_1 = nn.AdaptiveMaxPool2d(1)
+class aloalo(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.b1_0 = nn.AdaptiveAvgPool2d(1)
+        self.b1_1 = nn.AdaptiveMaxPool2d(1)
         
-#         self.conv_0 = nn.Conv2d(in_channel,in_channel,1,bias=False)
-#         self.conv_1 = nn.Conv2d(in_channel,in_channel,1,bias=False)
-#         self.conv_2 = nn.Conv2d(in_channel,in_channel,1,bias=False)
-#         self.conv_3 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+        self.conv_0 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+        self.conv_1 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+        self.conv_2 = nn.Conv2d(in_channel,in_channel,1,bias=False)
+        self.conv_3 = nn.Conv2d(in_channel,in_channel,1,bias=False)
 
-#         self.out = nn.Conv2d(2*in_channel,in_channel,1,bias=False)
-#     def forward(self,x):
-#         b,c,h,w = x.shape
-#         new_x = window_partition(x.permute(0,2,3,1),[2,2]).permute(0,3,1,2)
-#         avg_new_x = self.conv_0(self.b1_0(new_x)*new_x)
-#         max_new_x = self.conv_1(self.b1_1(new_x)*new_x)
-#         sum_new_x = window_reverse((avg_new_x+max_new_x).permute(0,2,3,1),[2,2],h,w).permute(0,3,1,2)
-#         avg_x = self.conv_2(self.b1_0(x)*x)
-#         max_x = self.conv_3(self.b1_1(x)*x)
-#         sum_x = avg_x+max_x
-#         return x+self.out(torch.cat((sum_new_x,sum_x),1))
+        self.out = nn.Conv2d(2*in_channel,in_channel,1,bias=False)
+    def forward(self,x):
+        b,c,h,w = x.shape
+        new_x = window_partition(x.permute(0,2,3,1),[2,2]).permute(0,3,1,2)
+        avg_new_x = self.conv_0(self.b1_0(new_x)*new_x)
+        max_new_x = self.conv_1(self.b1_1(new_x)*new_x)
+        sum_new_x = window_reverse((avg_new_x+max_new_x).permute(0,2,3,1),[2,2],h,w).permute(0,3,1,2)
+        avg_x = self.conv_2(self.b1_0(x)*x)
+        max_x = self.conv_3(self.b1_1(x)*x)
+        sum_x = avg_x+max_x
+        return x+self.out(torch.cat((sum_new_x,sum_x),1))
 
 
-# class ulaula(nn.Module):
-#     def __init__(self,in_channel):
-#         super().__init__()
-#         self.out = nn.Sequential(
-#             # multi_scope_block(in_channel,out_channel,3),
-#             aloalo(in_channel)
-#         )
-#     def forward(self,x):
-#         return self.out(x)
+class ulaula(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.out = nn.Sequential(
+            # multi_scope_block(in_channel,out_channel,3),
+            aloalo(in_channel)
+        )
+    def forward(self,x):
+        return self.out(x)
 
 
 # class Residual_net_1(nn.Module):
@@ -232,7 +232,11 @@ class Unpooling_func(nn.Module):
 class down_sampling(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.out =  Residual_net(in_channel,out_channel,3)
+        self.out =  nn.Sequential(
+            Residual_net(in_channel,out_channel,3),
+            ulaula(out_channel),
+            Residual_net(out_channel,out_channel),
+            )
         self.down = nn.Conv2d(out_channel,out_channel,kernel_size=2,stride=2,bias=False)
     def forward(self,x):
         out = self.out(x)
