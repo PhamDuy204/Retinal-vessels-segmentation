@@ -9,7 +9,7 @@ class TSB(nn.Module):
         super(TSB, self).__init__() 
         
         # Layer 1 
-        self.conv11= nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+        self.conv11 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
                                groups=in_channels, kernel_size=3, padding='same')
         self.conv12 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
                                 groups=in_channels, kernel_size=5, padding='same')
