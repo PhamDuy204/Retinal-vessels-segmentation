@@ -2,7 +2,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
-
+from bottle_neck import CustomBottleNeck
 # import sys
 # import torch.nn.functional as F
 
@@ -14,11 +14,7 @@ class SegModel(nn.Module):
         self.encode_0 = down_sampling(3,64) #b,8,256,256/b,8,128,128
         self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
 
-        self.bottle_neck = nn.Sequential(
-            Residual_net(128,256),  #b,32,64,64)
-            Residual_net(256,256)
-            )
-
+        self.bottle_neck = CustomBottleNeck(128, 256)
         self.decode_1_0 = Up_sampling(256,128) #b,16,128,128
         self.decode_1_1 = Up_sampling(256,128)#b,16,128,128
 
