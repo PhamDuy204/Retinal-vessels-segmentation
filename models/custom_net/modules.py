@@ -3,7 +3,101 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 from timm.models.swin_transformer import window_partition,window_reverse
+from soft_moe_pytorch import DynamicSlotsSoftMoE
+from einops.layers.torch import Rearrange
+from mamba_ssm import Mamba
+from timm.models.layers import DropPath
+from timm.models.swin_transformer_v2 import SwinTransformerV2Block
+class TSB(nn.Module): 
+    def __init__(self, in_channels, out_channels): 
+        super(TSB, self).__init__() 
+        
+        # Layer 1 
+        self.conv11 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                               groups=in_channels, kernel_size=3, padding='same')
+        self.conv12 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                                groups=in_channels, kernel_size=5, padding='same')
+        self.conv13 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                                groups=in_channels, kernel_size=7, padding='same')
+        
+        # Layer 2
+        self.conv21 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+        self.conv22 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+        self.conv23 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
+                                kernel_size=1, padding='same')
+        
+        # Layer 3
+        self.conv31 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+        self.conv32 = nn.Conv2d(in_channels=out_channels*3, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+        
 
+    def forward(self, X): 
+        x11 = self.conv11(X) 
+        x12 = self.conv12(X) 
+        x13 = self.conv13(X) 
+
+        x21 = self.conv21(x11)
+        x22 = self.conv22(x12) 
+        x23 = self.conv23(x13) 
+
+        x22 = x22 + x21 
+        x23 = x23 + x22 
+
+        x31 = self.conv31(X) 
+        x32 = torch.concat([x21, x22, x23], dim=1)
+        x32 = self.conv32(x32)
+
+        out = x31 + x32
+
+        return out  
+
+
+
+class CustomBottleNeck(nn.Module): 
+    def __init__(self, in_channels, out_channels):
+        super(CustomBottleNeck, self).__init__() 
+
+        self.conv_1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                                groups=in_channels, kernel_size=3, padding='same')
+        self.sigmoid_1 = nn.Sigmoid() 
+
+        self.conv_2 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                                groups=in_channels, kernel_size=3, padding='same')
+        self.sigmoid_2 = nn.Sigmoid() 
+
+        self.conv_mid = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                                  groups=in_channels, kernel_size=5, padding='same')
+        
+        self.groupnorm = nn.GroupNorm(num_groups=in_channels, num_channels=in_channels, 
+                                      affine=False)
+        
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                              groups=in_channels, kernel_size=3, padding='same') 
+        
+        self.tsb = TSB(in_channels=in_channels, out_channels=out_channels)
+
+    def forward(self, X): 
+        x_1 = self.conv_1(X)
+        x_1 = self.sigmoid_1(x_1) 
+
+        x_2 = self.conv_2(X) 
+        x_2 = self.sigmoid_2(x_2)
+
+        x_mid = self.conv_mid(X) 
+
+        x = x_1 + x_mid + x_2
+        x = self.groupnorm(x) 
+        x = self.conv(x) 
+
+        x = x + X 
+
+        out = self.tsb(x) 
+
+        return out 
 # class CustomActivation(nn.Module):
 #   def __init__(self):
 #     super().__init__()
@@ -226,14 +320,87 @@ class down_sampling(nn.Module):
     
 
 
+class BiDirectionalAddBlock(nn.Module):
+    def __init__(self, dim: int, ssm_drop: float = 0.0, drop_path: float = 0.0):
+        super().__init__()
+        self.dim = dim
+        self.mamba1 = Mamba(
+            d_model=self.dim,conv_bias=False
+        )
+        self.mamba2 = Mamba(
+            d_model=self.dim,conv_bias=False
+        )
+        self.norm = nn.LayerNorm(self.dim,bias=False)
+        self.dropout = nn.Dropout(ssm_drop)
+        self.act = nn.GELU()
+        self.drop_path = DropPath(drop_path)
 
+    def forward(self, x):
+        hidden_states = self.norm(x)
+        rev_input = torch.flip(hidden_states, dims=[1])
+        forward_states = self.mamba1(hidden_states)
+        backward_states = self.mamba2(rev_input)
+        hidden_states = forward_states + backward_states
+        hidden_states = self.drop_path(hidden_states)
+        hidden_states = hidden_states + x
+        hidden_states = self.act(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        return hidden_states
+class BiDirectionalAddFFBlock(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        ssm_drop: float = 0.0,
+        drop_path: float = 0.0,
+        num_experts=4
+    ) -> None:
+        super().__init__()
+        self.block = BiDirectionalAddBlock(dim, ssm_drop, drop_path)
+        self.ff = DynamicSlotsSoftMoE(
+            dim = dim,         # model dimensions
+            num_experts = num_experts,   # number of experts
+            geglu = True
+        )
+
+    def forward(self, x):
+        x = x + self.block(x)
+        x = x + self.ff(x)
+        return x
+class BottleNeck(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        ssm_drop: float = 0.0,
+        drop_path: float = 0.0,
+        num_experts=4
+    ) -> None:
+        super().__init__()
+        self.mamba_block = BiDirectionalAddFFBlock(dim,ssm_drop, drop_path,num_experts)
+        self.swint_block=SwinTransformerV2Block(dim,(8,8),2,2,1,qkv_bias=False)
+        self.ff=DynamicSlotsSoftMoE(
+            dim = dim,         # model dimensions
+            num_experts = num_experts,   # number of experts
+            geglu = True
+        )
+    def forward(self, x):
+        b,c,h,w=x.shape
+        x=x.permute(0,2,3,1).contiguous().flatten(1,2)
+        x = self.mamba_block(x)
+        # print(x)
+        x=x.view(b,h,w,c)
+        # print(x.shape)
+        x = x + self.swint_block(x)
+        # print(x)
+        x=x.flatten(1,2)
+        return (self.ff(x)+x).view(b,h,w,c).permute(0,3,1,2).contiguous()
 class Up_sampling(nn.Module):
     def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
-        self.up = Unpooling_func(in_channel,out_channel,scale_factor=scale_factor)
+        self.up = Unpooling_func(in_channel,in_channel,scale_factor=scale_factor)
 
         self.out =  nn.Sequential(
-            Residual_net(out_channel*2,out_channel,3)
+            Residual_net(in_channel*2,out_channel,3),
+            CustomBottleNeck(out_channel,out_channel)
             )
     def forward(self,x,x_encode):
         up = self.up(x)
