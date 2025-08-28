@@ -12,3 +12,5 @@ torchmetrics
 onnx
 PyWavelets
 kornia
+torchtune
+torchao
