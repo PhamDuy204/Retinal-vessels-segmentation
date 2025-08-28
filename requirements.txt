@@ -11,6 +11,10 @@ wandb
 torchmetrics
 onnx
 PyWavelets
+<<<<<<< HEAD
 kornia
 torchtune
 torchao
+=======
+kornia
+>>>>>>> origin/main

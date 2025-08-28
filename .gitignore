@@ -14,6 +14,10 @@ venv/
 *.pkl
 *.h5
 *.ckpt
+<<<<<<< HEAD
+=======
+*.ipynb
+>>>>>>> origin/main
 
 .vscode/
 
