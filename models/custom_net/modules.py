@@ -8,6 +8,9 @@ from einops.layers.torch import Rearrange
 from mamba_ssm import Mamba
 from timm.models.layers import DropPath
 from timm.models.swin_transformer_v2 import SwinTransformerV2Block
+from pytorch_wavelets import DWTForward, DWTInverse
+
+
 class TSB(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(TSB, self).__init__() 
@@ -393,19 +396,57 @@ class BottleNeck(nn.Module):
         # print(x)
         x=x.flatten(1,2)
         return (self.ff(x)+x).view(b,h,w,c).permute(0,3,1,2).contiguous()
+    
+class fusion_block_wave(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super().__init__()
+        self.change_1 = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.change_2 = nn.Conv3d(in_channel*2,in_channel,1,bias=False)
+        self.change_3 = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.change_4 = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+
+        self.up_1 = nn.ConvTranspose2d(in_channel,in_channel,2,2,bias=False)
+        self.up_2 = nn.ConvTranspose2d(in_channel,in_channel,2,2,bias=False)
+        self.out = nn.Conv2d(in_channel*3,out_channel,1,bias=False)
+    def forward(self,x_1,x_2):
+        '''
+        x_1 : b,c,h,w
+        x_2 : b,c,h,w
+        
+        '''
+        dwt1 = DWTForward(1,wave='haar')
+        dwt2 = DWTForward(1,wave='haar')
+        Yl1, Yh1 = dwt1(x_1)
+        Yl2, Yh2 = dwt2(x_2)
+        Yh1_mean = torch.mean(Yh1[0],2)
+        Yh2_mean = torch.mean(Yh2[0],2)
+
+        Yl1_2 = self.change_1(torch.cat((Yl1,Yl2),1))
+        
+        Yh1_2 = self.change_2(torch.cat((Yh1[0],Yh2[0]),1))
+        Yl1_Yh2 = self.change_3(torch.cat((Yl1,Yh2_mean),1))
+        Yl2_Yh1 = self.change_4(torch.cat((Yl2,Yh1_mean),1))
+        
+        idwt = DWTInverse(wave='db1')
+        
+        image_inverse = idwt((Yl1_2,[Yh1_2]))
+        up_1 = self.up_1(Yl1_Yh2)
+        up_2 = self.up_2(Yl2_Yh1)
+        
+        return self.out(torch.cat((image_inverse,up_1,up_2),1))
+        
+
 class Up_sampling(nn.Module):
     def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
         self.up = Unpooling_func(in_channel,in_channel,scale_factor=scale_factor)
 
-        self.out =  nn.Sequential(
-            Residual_net(in_channel*2,out_channel,3),
-            CustomBottleNeck(out_channel,out_channel)
-            )
+        self.out = fusion_block_wave(out_channel,out_channel)
     def forward(self,x,x_encode):
         up = self.up(x)
-        return self.out(torch.cat((up,x_encode),1))
+        return self.fusion_block(up,x_encode)
     
+
 class model_exchange_feature(nn.Module):
     def __init__(self,in_channel):
         super().__init__()
