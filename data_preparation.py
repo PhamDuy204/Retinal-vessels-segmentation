@@ -78,7 +78,7 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
     for i in range(len(all_custom_train_patch_datasets)):
         # for j in range(len(all_custom_test_patch_datasets)):
         #     if i == j: continue
-        train_set = ConcatDataset(all_custom_train_patch_datasets[0:i]+all_custom_train_patch_datasets[i+1:])
+        train_set = ConcatDataset(all_custom_train_patch_datasets[i+1:]+all_custom_train_patch_datasets[0:i])
         val_set = all_custom_test_patch_datasets[i]
         name = val_set.get_name()
         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)        
