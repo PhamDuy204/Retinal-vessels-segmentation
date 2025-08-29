@@ -3,6 +3,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
 
+from model_utils import Postprocessing
+
+
 
 class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
@@ -28,9 +31,9 @@ class SegModel(nn.Module):
         self.out = nn.Sequential(
             nn.Conv2d(64*2,64,1,bias=False),
             Unpooling_func(64,out_channel,2),
-            nn.Sigmoid()
+            Postprocessing()
         )
-
+        
         self.down = nn.Conv2d(64,128,2,2,bias=False)
         self.change_down = nn.Conv2d(128*2,128,1,bias=False)
         self.up = nn.ConvTranspose2d(128,64,2,2,bias=False)
