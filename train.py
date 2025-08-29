@@ -97,11 +97,7 @@ class Trainer:
                 # print(image.shape)
                 if args.chunk_size is None:
 
-<<<<<<< HEAD
-                    chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),8*args.batch_size),1)
-=======
                     chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),16*args.batch_size),1)
->>>>>>> origin/main
                 else:
                     chunk_size = args.chunk_size
                 image_chunks=torch.chunk(image,chunk_size)
@@ -332,15 +328,9 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         name         = info['name']
         patch = info['patches']
         seg_model=load_model_class(args.model)
-<<<<<<< HEAD
-        model = seg_model(3,1)
-        if patch:
-            _=model(torch.rand(1,3,args.patch_size,args.patch_size))
-=======
         model = seg_model(3,1).cuda()
         if patch:
             _=model(torch.rand(1,3,args.patch_size,args.patch_size).cuda())
->>>>>>> origin/main
         model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
