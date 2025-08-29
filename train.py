@@ -69,7 +69,8 @@ class Trainer:
             'best_recall' : 0,
             'best_spe' : 0,
             'best_auc': 0,
-            'best_dice': 0
+            'best_dice': 0,
+            'best_threshold':0
         }
 
         best_metrics = None
@@ -134,7 +135,7 @@ class Trainer:
                     training_loss+=loss.item()
             self.scheduler.step()
             current_lr = self.optimizer.param_groups[0]['lr']
-            acc,f1,iou,recall,spe,auc,dice=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch,args.patch_size,self.type_split)
+            acc,f1,iou,recall,spe,auc,dice,best_threshold=eval_for_seg(self.model,self.val_loader,self.gpu_id,self.patch,args.patch_size,self.type_split)
             scores={
                 'acc':acc,
                 'f1':f1,
@@ -142,7 +143,8 @@ class Trainer:
                 'recall':recall,
                 'spe':spe,
                 'auc':auc,
-                'dice':dice
+                'dice':dice,
+                'threshold':best_threshold
             }
             for best_method in best_eval_score.keys():
                 method = best_method.split('_')[-1]
@@ -168,6 +170,7 @@ class Trainer:
                 "val_specificity": spe,
                 "val_auc": auc,
                 "val_dice": dice,
+                "val_threshold": best_threshold,
                 "val_avg_metric": avg_metric,
                 "lr": current_lr,
             })

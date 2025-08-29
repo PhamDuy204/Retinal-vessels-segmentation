@@ -2,7 +2,7 @@ import torch
 from utils import *
 from torchmetrics.classification import Accuracy,BinaryF1Score,\
                                         AUROC, Recall, Specificity,\
-                                        JaccardIndex
+                                        JaccardIndex,BinaryROC
 from torchmetrics.segmentation import DiceScore
 from tqdm import tqdm
 # from timm.models.maxxvit import window_partition,window_reverse
@@ -17,6 +17,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
     jaccard_metric= JaccardIndex(task='binary').cuda()
     recall_metric = Recall(task='binary').cuda()
     spec_metric   = Specificity(task='binary').cuda()
+    roc_metric  = BinaryROC().cuda()
     auroc_metric  = AUROC(task='binary').cuda()
     dice_metric  = DiceScore(num_classes=2, average='macro').cuda()
 
@@ -80,10 +81,14 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             recall_metric.update(pred_mask, mask)
             spec_metric.update(pred_mask, mask)
             auroc_metric.update(prob, mask)
+            roc_metric.update(prob, mask)
             dice_metric.update(pred_mask.unsqueeze(0).unsqueeze(0).long(), mask.unsqueeze(0).unsqueeze(0).long())
             torch.cuda.empty_cache()
 
-
+    fpr, tpr, thresholds = roc_metric.compute()
+    j_scores = tpr - fpr
+    best_idx = torch.argmax(j_scores)
+    best_threshold = thresholds[best_idx]
     return (
         acc_metric.compute().item(),
         f1_metric.compute().item(),
@@ -92,4 +97,5 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
         spec_metric.compute().item(),
         auroc_metric.compute().item(),
         dice_metric.compute().item(),
+        best_threshold.item()
     )
