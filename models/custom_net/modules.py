@@ -5,12 +5,11 @@ import torch.nn.functional as F
 from timm.models.swin_transformer import window_partition,window_reverse
 from soft_moe_pytorch import DynamicSlotsSoftMoE
 from einops.layers.torch import Rearrange
+from einops import rearrange
+
 from mamba_ssm import Mamba
 from timm.models.layers import DropPath
 from timm.models.swin_transformer_v2 import SwinTransformerV2Block
-from pytorch_wavelets import DWTForward, DWTInverse
-
-
 class TSB(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(TSB, self).__init__() 
@@ -200,7 +199,7 @@ class deepwide_block(nn.Module):
         super().__init__()
         self.out = nn.Sequential(
             nn.Conv2d(in_channel,out_channel,1,bias=False),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Conv2d(out_channel,out_channel,kernel,padding='same',stride=stride,groups=out_channel,dilation=dilation,bias=False)
         )
         self.change = nn.Conv2d(in_channel,out_channel,1)
@@ -281,7 +280,7 @@ class Conv_func(nn.Module):
         self.feature = nn.Sequential(
             nn.Conv2d(in_channel,out_channel,kernel_size=kernel,padding='same',bias=False),
             nn.GroupNorm(out_channel,out_channel,affine=False),
-            nn.ReLU()
+            nn.GELU()
             )
     def forward(self,x):
         return self.feature(x)
@@ -301,7 +300,7 @@ class Residual_net(nn.Module):
 class Unpooling_func(nn.Module):
     def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
-        self.out = nn.ConvTranspose2d(in_channel,out_channel,kernel_size= scale_factor,stride = scale_factor,bias=False)
+        self.out = nn.ConvTranspose2d(in_channel,out_channel,kernel_size= 4,stride = 2,padding=1,bias=False)
     def forward(self,x):
         return self.out(x)
     
@@ -316,137 +315,12 @@ class down_sampling(nn.Module):
 
             )
         # self.down = Conv_func_1(out_channel,out_channel,kernel=2,padding=0,stride=2,activation=False)
-        self.down = nn.Conv2d(out_channel,out_channel,kernel_size=2,stride=2,bias=False)
+        self.down = nn.Conv2d(out_channel,out_channel,kernel_size=3,stride=2,padding=1,bias=False)
     def forward(self,x):
         out = self.out(x)
         return out,self.down(out)
+
     
-
-
-class BiDirectionalAddBlock(nn.Module):
-    def __init__(self, dim: int, ssm_drop: float = 0.0, drop_path: float = 0.0):
-        super().__init__()
-        self.dim = dim
-        self.mamba1 = Mamba(
-            d_model=self.dim,conv_bias=False
-        )
-        self.mamba2 = Mamba(
-            d_model=self.dim,conv_bias=False
-        )
-        self.norm = nn.LayerNorm(self.dim,bias=False)
-        self.dropout = nn.Dropout(ssm_drop)
-        self.act = nn.GELU()
-        self.drop_path = DropPath(drop_path)
-
-    def forward(self, x):
-        hidden_states = self.norm(x)
-        rev_input = torch.flip(hidden_states, dims=[1])
-        forward_states = self.mamba1(hidden_states)
-        backward_states = self.mamba2(rev_input)
-        hidden_states = forward_states + backward_states
-        hidden_states = self.drop_path(hidden_states)
-        hidden_states = hidden_states + x
-        hidden_states = self.act(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-        return hidden_states
-class BiDirectionalAddFFBlock(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        ssm_drop: float = 0.0,
-        drop_path: float = 0.0,
-        num_experts=4
-    ) -> None:
-        super().__init__()
-        self.block = BiDirectionalAddBlock(dim, ssm_drop, drop_path)
-        self.ff = DynamicSlotsSoftMoE(
-            dim = dim,         # model dimensions
-            num_experts = num_experts,   # number of experts
-            geglu = True
-        )
-
-    def forward(self, x):
-        x = x + self.block(x)
-        x = x + self.ff(x)
-        return x
-class BottleNeck(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        ssm_drop: float = 0.0,
-        drop_path: float = 0.0,
-        num_experts=4
-    ) -> None:
-        super().__init__()
-        self.mamba_block = BiDirectionalAddFFBlock(dim,ssm_drop, drop_path,num_experts)
-        self.swint_block=SwinTransformerV2Block(dim,(8,8),2,2,1,qkv_bias=False)
-        self.ff=DynamicSlotsSoftMoE(
-            dim = dim,         # model dimensions
-            num_experts = num_experts,   # number of experts
-            geglu = True
-        )
-    def forward(self, x):
-        b,c,h,w=x.shape
-        x=x.permute(0,2,3,1).contiguous().flatten(1,2)
-        x = self.mamba_block(x)
-        # print(x)
-        x=x.view(b,h,w,c)
-        # print(x.shape)
-        x = x + self.swint_block(x)
-        # print(x)
-        x=x.flatten(1,2)
-        return (self.ff(x)+x).view(b,h,w,c).permute(0,3,1,2).contiguous()
-    
-class fusion_block_wave(nn.Module):
-    def __init__(self,in_channel,out_channel):
-        super().__init__()
-        self.change_1 = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
-        self.change_2 = nn.Conv3d(in_channel*2,in_channel,1,bias=False)
-        self.change_3 = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
-        self.change_4 = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
-
-        self.up_1 = nn.ConvTranspose2d(in_channel,in_channel,2,2,bias=False)
-        self.up_2 = nn.ConvTranspose2d(in_channel,in_channel,2,2,bias=False)
-        self.out = nn.Conv2d(in_channel*3,out_channel,1,bias=False)
-    def forward(self,x_1,x_2):
-        '''
-        x_1 : b,c,h,w
-        x_2 : b,c,h,w
-        
-        '''
-        dwt1 = DWTForward(1,wave='haar')
-        dwt2 = DWTForward(1,wave='haar')
-        Yl1, Yh1 = dwt1(x_1)
-        Yl2, Yh2 = dwt2(x_2)
-        Yh1_mean = torch.mean(Yh1[0],2)
-        Yh2_mean = torch.mean(Yh2[0],2)
-
-        Yl1_2 = self.change_1(torch.cat((Yl1,Yl2),1))
-        
-        Yh1_2 = self.change_2(torch.cat((Yh1[0],Yh2[0]),1))
-        Yl1_Yh2 = self.change_3(torch.cat((Yl1,Yh2_mean),1))
-        Yl2_Yh1 = self.change_4(torch.cat((Yl2,Yh1_mean),1))
-        
-        idwt = DWTInverse(wave='db1')
-        
-        image_inverse = idwt((Yl1_2,[Yh1_2]))
-        up_1 = self.up_1(Yl1_Yh2)
-        up_2 = self.up_2(Yl2_Yh1)
-        
-        return self.out(torch.cat((image_inverse,up_1,up_2),1))
-        
-
-class Up_sampling(nn.Module):
-    def __init__(self,in_channel,out_channel,scale_factor = 2):
-        super().__init__()
-        self.up = Unpooling_func(in_channel,in_channel,scale_factor=scale_factor)
-
-        self.out = fusion_block_wave(out_channel,out_channel)
-    def forward(self,x,x_encode):
-        up = self.up(x)
-        return self.fusion_block(up,x_encode)
-    
-
 class model_exchange_feature(nn.Module):
     def __init__(self,in_channel):
         super().__init__()
@@ -468,3 +342,68 @@ class kame_func(nn.Module):
 
     def forward(self,low_size,high_size):
         return self.change(torch.cat((self.conv_tran(low_size),high_size),1))
+
+
+class attention_gate(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super().__init__()
+
+        self.feature = nn.Sequential(
+            nn.GELU(),
+            nn.Conv2d(in_channel*2,in_channel*2,1,bias=False),
+            nn.Sigmoid(),
+        )
+        self.conv1_avg_max = nn.Sequential(
+        nn.Conv2d(in_channel*2,in_channel*2,1,bias=False),
+        nn.Sigmoid()
+        )
+        self.change_max = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.change_avg = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.change_sa_se = nn.Conv2d(4*in_channel,in_channel*2,1,bias=False)
+        self.conv1_x1 = nn.Sequential(
+            nn.Conv2d(in_channel,in_channel*2,1,bias=False),
+            nn.GroupNorm(in_channel*2,in_channel*2,affine=False),
+            )
+        self.conv1_x2 = nn.Sequential(
+            nn.Conv2d(in_channel,in_channel*2,1,bias=False),
+            nn.GroupNorm(in_channel*2,in_channel*2,affine=False),
+            )
+        self.conv_merge_1 = nn.Sequential(
+            nn.Conv2d(in_channel*2,in_channel*2,1,bias=False),
+            nn.GroupNorm(in_channel*2,in_channel*2,affine=False),
+            nn.ReLU()
+            )
+
+        self.conv_merge_2 = nn.Sequential(
+            nn.Conv2d(in_channel*2,out_channel,1,bias=False),
+            nn.GroupNorm(out_channel,out_channel,affine=False),
+            nn.ReLU()
+            )
+
+    def forward(self,x_1,x_2):
+        merge = torch.cat((x_1,x_2),1)
+        se_block = merge  * self.feature(merge)
+        avg_ = self.change_avg(nn.AdaptiveAvgPool2d(1)(merge))
+        max_ = self.change_max(nn.AdaptiveMaxPool2d(1)(merge))
+        
+        sa_block =  merge*self.conv1_avg_max(torch.cat((avg_,max_),1))
+        x_2 = self.conv1_x1(x_2)
+        merge  = self.conv_merge_1(x_2 + self.change_sa_se(torch.cat((sa_block,se_block),1)))
+        x_1 = self.conv1_x2(x_1)
+        out = self.conv_merge_2( x_1 +merge)
+        return out
+
+
+
+
+class Up_sampling(nn.Module):
+    def __init__(self,in_channel,out_channel,scale_factor = 2):
+        super().__init__()
+        self.up = Unpooling_func(in_channel,in_channel,scale_factor)
+
+        self.out = attention_gate(in_channel,out_channel)
+    def forward(self,x,x_encode):
+        up = self.up(x)
+        out = self.out(up,x_encode)
+        return out
+
