@@ -317,82 +317,6 @@ class down_sampling(nn.Module):
     def forward(self,x):
         out = self.out(x)
         return out,self.down(out)
-    
-
-
-class BiDirectionalAddBlock(nn.Module):
-    def __init__(self, dim: int, ssm_drop: float = 0.0, drop_path: float = 0.0):
-        super().__init__()
-        self.dim = dim
-        self.mamba1 = Mamba(
-            d_model=self.dim,conv_bias=False
-        )
-        self.mamba2 = Mamba(
-            d_model=self.dim,conv_bias=False
-        )
-        self.norm = nn.LayerNorm(self.dim,bias=False)
-        self.dropout = nn.Dropout(ssm_drop)
-        self.act = nn.GELU()
-        self.drop_path = DropPath(drop_path)
-
-    def forward(self, x):
-        hidden_states = self.norm(x)
-        rev_input = torch.flip(hidden_states, dims=[1])
-        forward_states = self.mamba1(hidden_states)
-        backward_states = self.mamba2(rev_input)
-        hidden_states = forward_states + backward_states
-        hidden_states = self.drop_path(hidden_states)
-        hidden_states = hidden_states + x
-        hidden_states = self.act(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-        return hidden_states
-class BiDirectionalAddFFBlock(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        ssm_drop: float = 0.0,
-        drop_path: float = 0.0,
-        num_experts=4
-    ) -> None:
-        super().__init__()
-        self.block = BiDirectionalAddBlock(dim, ssm_drop, drop_path)
-        self.ff = DynamicSlotsSoftMoE(
-            dim = dim,         # model dimensions
-            num_experts = num_experts,   # number of experts
-            geglu = True
-        )
-
-    def forward(self, x):
-        x = x + self.block(x)
-        x = x + self.ff(x)
-        return x
-class BottleNeck(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        ssm_drop: float = 0.0,
-        drop_path: float = 0.0,
-        num_experts=4
-    ) -> None:
-        super().__init__()
-        self.mamba_block = BiDirectionalAddFFBlock(dim,ssm_drop, drop_path,num_experts)
-        self.swint_block=SwinTransformerV2Block(dim,(8,8),2,2,1,qkv_bias=False)
-        self.ff=DynamicSlotsSoftMoE(
-            dim = dim,         # model dimensions
-            num_experts = num_experts,   # number of experts
-            geglu = True
-        )
-    def forward(self, x):
-        b,c,h,w=x.shape
-        x=x.permute(0,2,3,1).contiguous().flatten(1,2)
-        x = self.mamba_block(x)
-        # print(x)
-        x=x.view(b,h,w,c)
-        # print(x.shape)
-        x = x + self.swint_block(x)
-        # print(x)
-        x=x.flatten(1,2)
-        return (self.ff(x)+x).view(b,h,w,c).permute(0,3,1,2).contiguous()
 class Up_sampling(nn.Module):
     def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
@@ -427,3 +351,5 @@ class kame_func(nn.Module):
 
     def forward(self,low_size,high_size):
         return self.change(torch.cat((self.conv_tran(low_size),high_size),1))
+
+
