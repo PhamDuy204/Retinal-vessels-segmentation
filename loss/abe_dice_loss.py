@@ -12,7 +12,7 @@ class MultiScopeLoss(nn.Module):
         pred = pred.squeeze(1).float()
         truth = truth.squeeze(1).float()
         loss=torch.zeros(1).to(pred.device)
-        for i,wl in [(3,0.5),(5,0.3),(7,0.2)]:
+        for i,wl in [(3,1),(5,0),(7,0)]:
             unfold_pred=F.unfold(pred,i,stride=max(i//2,1)).reshape(b,i,i,-1).permute(0,3,1,2)
             unfold_target = F.unfold(truth,i,stride=max(i//2,1)).reshape(b,i,i,-1).permute(0,3,1,2)
             sum_=torch.sum(unfold_target,(-1,-2))

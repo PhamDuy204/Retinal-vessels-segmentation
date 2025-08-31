@@ -344,64 +344,58 @@ class kame_func(nn.Module):
         return self.change(torch.cat((self.conv_tran(low_size),high_size),1))
 
 
-class attention_gate(nn.Module):
-    def __init__(self,in_channel,out_channel):
-        super().__init__()
 
-        self.feature = nn.Sequential(
-            nn.GELU(),
-            nn.Conv2d(in_channel*2,in_channel*2,1,bias=False),
+class Attention_gate(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.out = nn.Sequential(
+            nn.ReLU(),
+            nn.Conv2d(in_channel,in_channel,1,bias=False),
             nn.Sigmoid(),
         )
-        self.conv1_avg_max = nn.Sequential(
-        nn.Conv2d(in_channel*2,in_channel*2,1,bias=False),
-        nn.Sigmoid()
-        )
-        self.change_max = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
-        self.change_avg = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
-        self.change_sa_se = nn.Conv2d(4*in_channel,in_channel*2,1,bias=False)
-        self.conv1_x1 = nn.Sequential(
-            nn.Conv2d(in_channel,in_channel*2,1,bias=False),
-            nn.GroupNorm(in_channel*2,in_channel*2,affine=False),
-            )
-        self.conv1_x2 = nn.Sequential(
-            nn.Conv2d(in_channel,in_channel*2,1,bias=False),
-            nn.GroupNorm(in_channel*2,in_channel*2,affine=False),
-            )
-        self.conv_merge_1 = nn.Sequential(
-            nn.Conv2d(in_channel*2,in_channel*2,1,bias=False),
-            nn.GroupNorm(in_channel*2,in_channel*2,affine=False),
-            nn.ReLU()
-            )
+    def forward(self,x):
+        return x*self.out(x)
 
-        self.conv_merge_2 = nn.Sequential(
-            nn.Conv2d(in_channel*2,out_channel,1,bias=False),
+
+class Inception_lite(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.b1 = lite(in_channel,in_channel,3,1)
+        self.b2 = lite(in_channel,in_channel,3,3)
+        self.b3 = lite(in_channel,in_channel,3,5)
+        self.change_feature = nn.Conv2d(in_channel*3,in_channel,1,bias=False)
+    def forward(self,x):
+        b1 = self.b1(x)
+        b2 = self.b2(x)
+        b3 = self.b3(x)
+        merge = self.change_feature(torch.cat((b1,b2,b3),1))
+        return x+merge
+
+class omni_block(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channel,out_channel,1,bias=False)
+        self.inception = Inception_lite(out_channel)
+        self.Ag = Attention_gate(out_channel)
+        self.x_1 = nn.Conv2d(in_channel,out_channel,1,bias=False)
+        self.x_2 = nn.Conv2d(in_channel,out_channel,1,bias=False)
+        self.change_feature = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.out = nn.Sequential(
+            nn.Conv2d(out_channel,out_channel,1,bias=False),
             nn.GroupNorm(out_channel,out_channel,affine=False),
-            nn.ReLU()
-            )
-
+            nn.ReLU(),
+        )
     def forward(self,x_1,x_2):
-        merge = torch.cat((x_1,x_2),1)
-        se_block = merge  * self.feature(merge)
-        avg_ = self.change_avg(nn.AdaptiveAvgPool2d(1)(merge))
-        max_ = self.change_max(nn.AdaptiveMaxPool2d(1)(merge))
-        
-        sa_block =  merge*self.conv1_avg_max(torch.cat((avg_,max_),1))
-        x_2 = self.conv1_x1(x_2)
-        merge  = self.conv_merge_1(x_2 + self.change_sa_se(torch.cat((sa_block,se_block),1)))
-        x_1 = self.conv1_x2(x_1)
-        out = self.conv_merge_2( x_1 +merge)
-        return out
-
-
-
+        merge = self.change_feature(torch.cat((x_1,x_2),1))
+        merge = self.x_2(x_2) + self.inception(self.conv1(merge))
+        return self.out(self.x_1(x_1)+self.Ag(merge))
 
 class Up_sampling(nn.Module):
     def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
         self.up = Unpooling_func(in_channel,in_channel,scale_factor)
 
-        self.out = attention_gate(in_channel,out_channel)
+        self.out = omni_block(in_channel,out_channel)
     def forward(self,x,x_encode):
         up = self.up(x)
         out = self.out(up,x_encode)
