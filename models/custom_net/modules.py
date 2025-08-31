@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
-from timm.models.swin_transformer import window_partition,window_reverse
+
+from timm.models.swin_transformer_v2_cr import window_partition,window_reverse
 from soft_moe_pytorch import DynamicSlotsSoftMoE
 from einops.layers.torch import Rearrange
 from einops import rearrange
@@ -246,7 +247,7 @@ class aloalo(nn.Module):
         new_x = window_partition(x.permute(0,2,3,1),[2,2]).permute(0,3,1,2)
         avg_new_x = self.conv_0(self.b1_0(new_x)*new_x)
         max_new_x = self.conv_1(self.b1_1(new_x)*new_x)
-        sum_new_x = window_reverse((avg_new_x+max_new_x).permute(0,2,3,1),[2,2],h,w).permute(0,3,1,2)
+        sum_new_x = window_reverse((avg_new_x+max_new_x).permute(0,2,3,1),[2,2],[h,w]).permute(0,3,1,2)
         avg_x = self.conv_2(self.b1_0(x)*x)
         max_x = self.conv_3(self.b1_1(x)*x)
         sum_x = avg_x+max_x
@@ -345,7 +346,7 @@ class kame_func(nn.Module):
 
 
 
-class Attention_gate(nn.Module):
+class se_block(nn.Module):
     def __init__(self,in_channel):
         super().__init__()
         self.out = nn.Sequential(
@@ -353,51 +354,97 @@ class Attention_gate(nn.Module):
             nn.Conv2d(in_channel,in_channel,1,bias=False),
             nn.Sigmoid(),
         )
-    def forward(self,x):
-        return x*self.out(x)
+        self.change_merge = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+    def forward(self,x1,x2):
+        merge = self.change_merge(torch.cat((x1,x2),1))
+        return x1*self.out(merge)
 
-
-class Inception_lite(nn.Module):
-    def __init__(self,in_channel):
-        super().__init__()
-        self.b1 = lite(in_channel,in_channel,3,1)
-        self.b2 = lite(in_channel,in_channel,3,3)
-        self.b3 = lite(in_channel,in_channel,3,5)
-        self.change_feature = nn.Conv2d(in_channel*3,in_channel,1,bias=False)
-    def forward(self,x):
-        b1 = self.b1(x)
-        b2 = self.b2(x)
-        b3 = self.b3(x)
-        merge = self.change_feature(torch.cat((b1,b2,b3),1))
-        return x+merge
-
-class omni_block(nn.Module):
+class block_swim_se(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.conv1 = nn.Conv2d(in_channel,out_channel,1,bias=False)
-        self.inception = Inception_lite(out_channel)
-        self.Ag = Attention_gate(out_channel)
-        self.x_1 = nn.Conv2d(in_channel,out_channel,1,bias=False)
-        self.x_2 = nn.Conv2d(in_channel,out_channel,1,bias=False)
-        self.change_feature = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.se_1 = se_block(in_channel)
+        self.se_2 = se_block(in_channel)
+        self.merge = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.out = Residual_net(in_channel,out_channel)
+    def forward(self,x1,x2):
+        b,c,h,w = x1.shape
+        se_x = self.se_1(x1,x2)
+        swim_x1 = window_partition(x1.permute(0,2,3,1),[2,2]).permute(0,3,1,2)
+        swim_x2 = window_partition(x2.permute(0,2,3,1),[2,2]).permute(0,3,1,2)
+
+        se_swim = window_reverse(self.se_2(swim_x1,swim_x2).permute(0,2,3,1),[2,2],[h,w]).permute(0,3,1,2)
+        merge = self.merge(torch.cat((se_swim,se_x),1))
+        return self.out(merge)        
+
+class se_block(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
         self.out = nn.Sequential(
-            nn.Conv2d(out_channel,out_channel,1,bias=False),
-            nn.GroupNorm(out_channel,out_channel,affine=False),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(in_channel,int(in_channel//4),1,bias=False),
             nn.ReLU(),
+            nn.Conv2d(int(in_channel//4),in_channel,1,bias=False),
+            nn.Sigmoid()
         )
-    def forward(self,x_1,x_2):
-        merge = self.change_feature(torch.cat((x_1,x_2),1))
-        merge = self.x_2(x_2) + self.inception(self.conv1(merge))
-        return self.out(self.x_1(x_1)+self.Ag(merge))
+    def forward(self,x):
+        return x + x*self.out(x)
+
+
+class ESE_block(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super().__init__()
+        self.out = nn.Sequential(
+            nn.Conv2d(in_channel,in_channel,3,padding='same',groups=in_channel,bias=False),
+            nn.GroupNorm(in_channel,in_channel,affine=False),
+            nn.Conv2d(in_channel,out_channel,1,bias=False),
+            nn.GroupNorm(out_channel,out_channel,affine=False),
+            se_block(out_channel),
+            nn.GELU(),
+            nn.Conv2d(out_channel,out_channel,1,bias=False)
+        )
+        self.change = nn.Conv2d(in_channel,out_channel,1,bias=False)
+    def forward(self,x):
+        return self.change(x)+self.out(x)
+    
+
+class e_conv(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super().__init__()
+        self.out = nn.Sequential(
+            nn.Conv2d(in_channel,in_channel,3,groups=in_channel,bias=False,padding='same'),
+            nn.GroupNorm(in_channel,in_channel,affine=False),
+            nn.Conv2d(in_channel,out_channel,1,bias=False),
+            ESE_block(out_channel,out_channel)
+        )
+        self.change = nn.Conv2d(in_channel,out_channel,1,bias=False)
+    def forward(self,x):
+        return self.out(x)+self.change(x)
+
+class e_conv_block(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super().__init__()
+        self.change1 = nn.Conv2d(in_channel,out_channel,1,bias=False)
+        self.change2 = nn.Conv2d(in_channel,out_channel,1,bias=False)
+        self.conv_nest = e_conv(out_channel,out_channel)
+        self.out = nn.Sequential(
+            e_conv(out_channel*2,out_channel),
+            nn.Conv2d(out_channel,out_channel,1,bias=False),
+        )
+
+    def forward(self,x1,x2):
+        merge = torch.cat((x1,x2),1)
+        merge1,merge2= merge.chunk(2,1)
+        merge1 = self.change1(merge1)
+        merge2 = self.change2(merge2)
+        return self.out(torch.cat((self.conv_nest(merge1),merge2),1))
 
 class Up_sampling(nn.Module):
     def __init__(self,in_channel,out_channel,scale_factor = 2):
         super().__init__()
         self.up = Unpooling_func(in_channel,in_channel,scale_factor)
 
-        self.out = omni_block(in_channel,out_channel)
+        self.out = e_conv_block(in_channel,out_channel)
     def forward(self,x,x_encode):
         up = self.up(x)
         out = self.out(up,x_encode)
         return out
-
