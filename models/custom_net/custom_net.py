@@ -2,8 +2,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
-from model_utils import OtsuBinarize
-
+from bottle_neck import * 
 
 
 class SegModel(nn.Module):
@@ -15,8 +14,7 @@ class SegModel(nn.Module):
         self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
 
         self.bottle_neck = nn.Sequential(
-            Residual_net(128,256),  #b,32,64,64)
-            Residual_net(256,256)
+                CustomBottleNeck1(128, 256)
             )
 
         self.decode_1_0 = Up_sampling(256,128) #b,16,128,128
@@ -30,8 +28,7 @@ class SegModel(nn.Module):
         self.out = nn.Sequential(
             nn.Conv2d(64*2,64,1,bias=False),
             Unpooling_func(64,out_channel,2),
-            # nn.Sigmoid()
-            OtsuBinarize() 
+            nn.Sigmoid()
         )
         
         self.down = nn.Conv2d(64,128,2,2,bias=False)
