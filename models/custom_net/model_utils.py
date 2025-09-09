@@ -1,53 +1,45 @@
+import numpy as np
 import torch
-import torch.nn as nn
 
-class Postprocessing(nn.Module):
+def otsu_threshold(gray):
     """
-    Otsu's thresholding chạy song song trên GPU bằng PyTorch.
-    Input: Tensor (N, 1, H, W) với giá trị trong khoảng [0, 1].
-    Output: Tensor (N, 1, H, W) nhị phân {0.0, 1.0}.
+    Computes Otsu's threshold for a grayscale image (numpy array, uint8, 0-255).
+    Returns the threshold value (int, 0-255).
     """
-    def __init__(self, num_bins: int = 256):
-        super(Postprocessing, self).__init__()
-        self.num_bins = num_bins
+    pixel_number = gray.shape[0] * gray.shape[1]
+    mean_weight = 1.0 / pixel_number
+    his, bins = np.histogram(gray, np.arange(0, 257))
+    final_thresh = -1
+    final_value = -1
+    intensity_arr = np.arange(256)
+    for t in bins[1:-1]:  # From 1 to 255
+        pcb = np.sum(his[:t])
+        pcf = np.sum(his[t:])
+        if pcb == 0 or pcf == 0:
+            continue
+        Wb = pcb * mean_weight
+        Wf = pcf * mean_weight
+        mub = np.sum(intensity_arr[:t] * his[:t]) / float(pcb)
+        muf = np.sum(intensity_arr[t:] * his[t:]) / float(pcf)
+        value = Wb * Wf * (mub - muf) ** 2
+        if value > final_value:
+            final_thresh = t
+            final_value = value
+    if final_thresh == -1:
+        final_thresh = 0  # Fallback if no threshold found (e.g., uniform image)
+    return final_thresh
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        device = X.device
-        dtype = X.dtype
-        N, _, H, W = X.shape
-
-        # Scale về [0, num_bins-1] (giả lập uint8)
-        X_scaled = (X * (self.num_bins - 1)).long().view(N, -1)  # (N, H*W)
-
-        # Tính histogram cho từng ảnh trong batch
-        # hist[i, :] = histogram của ảnh i
-        hist = torch.stack([
-            torch.bincount(X_scaled[i], minlength=self.num_bins)
-            for i in range(N)
-        ], dim=0).to(device=device, dtype=torch.float32)  # (N, 256)
-
-        # Tổng số pixel
-        total = hist.sum(dim=1, keepdim=True)  # (N, 1)
-
-        # Xác suất cho từng mức xám
-        prob = hist / total  # (N, 256)
-
-        # Cumulative sum cho trọng số và mean
-        omega = torch.cumsum(prob, dim=1)  # (N, 256)
-        mu = torch.cumsum(prob * torch.arange(self.num_bins, device=device), dim=1)  # (N, 256)
-
-        # Tổng mean (global mean)
-        mu_total = mu[:, -1].unsqueeze(1)  # (N, 1)
-
-        # Between-class variance
-        sigma_b2 = (mu_total * omega - mu)**2 / (omega * (1 - omega) + 1e-8)  # (N, 256)
-
-        # Tìm ngưỡng tốt nhất cho từng ảnh
-        thresholds = torch.argmax(sigma_b2, dim=1)  # (N,)
-
-        # Áp dụng threshold để tạo mask
-        X_uint8 = (X * 255).to(torch.uint8)
-        thresholds = thresholds.view(N, 1, 1, 1).to(X_uint8.device)
-        masks = (X_uint8 >= thresholds).to(dtype)  # (N, 1, H, W)
-
-        return masks
+def otsu_binarize(logits):
+    """
+    Takes model logits (torch.Tensor, shape [B, 1, H, W]), applies sigmoid to get probabilities,
+    then uses Otsu to find per-image threshold and binarize.
+    Returns binary tensor [B, 1, H, W] with 0.0 or 1.0.
+    """
+    probs = torch.sigmoid(logits)
+    binary = torch.zeros_like(probs)
+    for i in range(probs.size(0)):
+        img = probs[i, 0].cpu().numpy()  # [H, W] float [0,1]
+        gray = (img * 255).astype(np.uint8)  # Scale to 0-255 uint8
+        thresh = otsu_threshold(gray) / 255.0  # Normalize threshold back to [0,1]
+        binary[i, 0] = (probs[i, 0] > thresh).float()
+    return binary
