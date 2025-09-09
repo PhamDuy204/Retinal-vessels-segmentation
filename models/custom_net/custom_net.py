@@ -2,8 +2,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
-
-from model_utils import Postprocessing
+from model_utils import OtsuBinarize
 
 
 
@@ -31,7 +30,8 @@ class SegModel(nn.Module):
         self.out = nn.Sequential(
             nn.Conv2d(64*2,64,1,bias=False),
             Unpooling_func(64,out_channel,2),
-            Postprocessing()
+            # nn.Sigmoid()
+            OtsuBinarize() 
         )
         
         self.down = nn.Conv2d(64,128,2,2,bias=False)
