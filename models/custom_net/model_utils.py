@@ -1,3 +1,4 @@
+import torch 
 import torch.nn as nn 
 import numpy as np 
 
@@ -32,3 +33,22 @@ class OtsuBinarize(nn.Module):
         if final_thresh == -1:
             final_thresh = 0  # Fallback if no threshold found (e.g., uniform image)
         return final_thresh
+
+    def forward(self, logits):
+        """
+        Takes model logits (torch.Tensor, shape [B, 1, H, W]), applies sigmoid to get probabilities,
+        then uses Otsu to find per-image threshold and binarize.
+        During training, returns sigmoid output to ensure differentiability.
+        During inference, returns binarized output using Otsu threshold.
+        """
+        probs = torch.sigmoid(logits)  # [B, 1, H, W]
+        if self.training:
+            return probs  # Return sigmoid output during training for differentiability
+        else:
+            binary = torch.zeros_like(probs)
+            for i in range(probs.size(0)):
+                img = probs[i, 0].detach().cpu().numpy()  # [H, W] float [0,1]
+                gray = (img * 255).astype(np.uint8)  # Scale to 0-255 uint8
+                thresh = self.otsu_threshold(gray) / 255.0  # Normalize threshold back to [0,1]
+                binary[i, 0] = (probs[i, 0] > thresh).float()
+            return binary.to(logits.device)
