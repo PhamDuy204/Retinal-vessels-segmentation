@@ -1,7 +1,5 @@
 import torch.nn as nn
 import torch
-<<<<<<< HEAD
-=======
 import torch.nn.functional as F
 import numpy as np
 
@@ -25,21 +23,12 @@ class MultiScopeLoss(nn.Module):
             w = nn.Softmax(1)(sum_/-sum_.shape[-1])
             loss+=torch.mean(torch.sum(w*out,-1))*wl
         return loss
->>>>>>> origin/main
 
 class AbeDiceLoss(nn.Module):
     def __init__(self):
         super().__init__()
         pass
     def forward(self,pred,truth):
-<<<<<<< HEAD
-        pred=pred.squeeze().float()
-        truth=truth.squeeze().float()
-        # Abe Dice Loss
-        erc = torch.pow(pred,2*(1-(pred**2)))
-        abe_diceloss_all = 1-(torch.sum(2*erc*truth)/torch.sum(erc**2 +truth))
-        return abe_diceloss_all
-=======
         # pred=pred.squeeze().float().flatten()
         # truth=truth.squeeze().float().flatten()
         # # Abe Dice Loss
@@ -71,4 +60,3 @@ class AbeDiceLoss(nn.Module):
         # diceloss = 1-(torch.sum(2*pred*truth)/torch.sum(pred +truth))
 
         return 5*MultiScopeLoss()(pred,truth)+10*focal_loss+nn.BCELoss()(pred,truth)+nn.L1Loss()(pred.flatten(),truth.flatten())
->>>>>>> origin/main
