@@ -12,3 +12,4 @@ torchmetrics
 onnx
 PyWavelets
 kornia
+einops
