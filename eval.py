@@ -35,7 +35,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             stride=None
             if patch and type_split!='random':
                 # condition=int(H>W)
-                num_patch=(64,64)
+                num_patch=(96,96)
                 image,tmp_stride = extract_patches_with_target_count(image,patch_size,num_patch)
                 edge,_ = extract_patches_with_target_count(edge,patch_size,num_patch)
                 stride=tmp_stride
@@ -73,7 +73,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             # print(mask.dtype)
             # print(prob.dtype)
 
-            pred_mask = torch.where(prob>0.5,1,0)
+            pred_mask = torch.where(prob>0.38,1,0)
 
             acc_metric.update(pred_mask, mask)
             f1_metric.update(pred_mask, mask)

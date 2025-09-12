@@ -15,9 +15,7 @@ from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
 from load_model import load_model_class,load_loss_class
 import wandb
-from timm.models.maxxvit import window_partition,window_reverse
 import math
-import kornia
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=1)
@@ -210,7 +208,7 @@ class Trainer:
 
                     stride=None
                     if self.patch and self.type_split!='random':
-                        num_patch=(64,64)
+                        num_patch=(96,96)
                         ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
                         ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
                         stride=tmp_stride
@@ -268,7 +266,7 @@ class Trainer:
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
-                    ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
+                    ex_pred_mask=torch.where(ex_pred_mask>0.38,1,0)
                     # print(ex_pred_mask.shape)
                     # print(ex_image.shape)
                     for i in range(len(ex_image)):
