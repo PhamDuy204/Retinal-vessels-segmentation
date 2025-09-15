@@ -353,7 +353,6 @@ class ResNet(nn.Module):
         self.conv2 = Depthwise(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
         self.gelu2 = nn.GELU() 
 
-        # projection layer nếu số kênh thay đổi
         if in_channels != out_channels:
             self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding='same')
         else:
@@ -364,7 +363,7 @@ class ResNet(nn.Module):
         x = self.gelu1(x) 
         x = self.conv2(x) 
 
-        shortcut = self.shortcut(X)   # đảm bảo cùng số kênh
+        shortcut = self.shortcut(X)   
         x = x + shortcut
 
         x = self.gelu2(x) 
