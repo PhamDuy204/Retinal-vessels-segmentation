@@ -20,4 +20,4 @@ venv/
 
 wandb/
 checkpoints/
-notebooks/
+notebooks/*
