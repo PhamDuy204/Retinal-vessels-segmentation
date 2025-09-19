@@ -26,23 +26,21 @@ def sobel_transform(image):
     sb = (sb_x+sb_y)/2
     return sb
 
-def apply_gamma_correction(orimage, gamma=1.0):
+def apply_gamma_correction(orimage, gamma=1.4):
     image=orimage.copy().astype(float)
-    image_normalized = image / 255.0
+    image_normalized = (image / 255.0)
     gamma_corrected = np.power(image_normalized, gamma)
-    gamma_corrected = np.uint8((gamma_corrected * 255).clip(0,255))
-
+    gamma_corrected = np.uint8((gamma_corrected* 255).clip(0,255))
+    # gamma_corrected= np.uint8((1-gamma_corrected.astype(float)/ 255.0) * 255)
     return gamma_corrected
-
 def preprocessing_img(path):
     img=cv2.imread(path,1)
     b,g,r=img.transpose(2,0,1)
-    new_r=apply_gamma_correction(wiener(cv2.createCLAHE(4,(12,12)).apply(r).astype(np.float32),7),2)
-    new_g=cv2.createCLAHE(4,(12,12)).apply(g.astype(np.uint8))
-    new_b=wiener(cv2.createCLAHE(4,(12,12)).apply(b).astype(np.float32),7)
-    new_img = np.array([new_b,new_g,new_r]).transpose(1,2,0)
-    out=new_img.clip(0,255)
-    return out
+    new_g=cv2.createCLAHE(12,(12,12)).apply(g.astype(np.uint8))
+    new_b=wiener(cv2.createCLAHE(7,(12,12)).apply(b).astype(np.float32),7)
+    new_img = np.array([r,new_g,new_b]).transpose(1,2,0)
+    out=convert_gray(new_img.clip(0,255))
+    return apply_gamma_correction(out)
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:

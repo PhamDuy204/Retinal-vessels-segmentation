@@ -80,7 +80,7 @@ class CustomTrainDataset(Dataset):
                     # print(edge.shape)
                     # h_i,w_i=image.shape[-2:]
                     # condition=int(h_i>w_i)
-                    num_patch=(96,96)
+                    num_patch=(64,64)
 
                     patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
                     patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
@@ -93,7 +93,7 @@ class CustomTrainDataset(Dataset):
                     # print(patches_image.shape)
                     patches_mask=patches_mask[filter_]
                     patches_edge=patches_edge[filter_].unsqueeze(1)
-                num_sample =torch.randperm(len(patches_image))[:1500]
+                num_sample =torch.randperm(len(patches_image))[:750]
                 return {
                     'image':patches_image[num_sample],
                     'mask':patches_mask.long().squeeze()[num_sample],

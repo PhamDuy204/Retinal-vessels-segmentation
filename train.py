@@ -19,7 +19,7 @@ import math
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=1)
-parser.add_argument("-e", "--epochs",type=int, default=100)
+parser.add_argument("-e", "--epochs",type=int, default=50)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
 parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
@@ -179,9 +179,9 @@ class Trainer:
                 save_e = e
         if best_metrics and best_params:
                 torch.cuda.empty_cache()
-                best_model=load_model_class(args.model)(3,1).cuda()
+                best_model=load_model_class(args.model)(1,1).cuda()
                 if self.patch:
-                    _=best_model(torch.rand(1,3,args.patch_size,args.patch_size).cuda())
+                    _=best_model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
                 best_model.zero_grad()
                 best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
                 best_model.eval()
@@ -208,7 +208,7 @@ class Trainer:
 
                     stride=None
                     if self.patch and self.type_split!='random':
-                        num_patch=(96,96)
+                        num_patch=(64,64)
                         ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
                         ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
                         stride=tmp_stride
@@ -266,7 +266,7 @@ class Trainer:
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
-                    ex_pred_mask=torch.where(ex_pred_mask>0.38,1,0)
+                    ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
                     # print(ex_pred_mask.shape)
                     # print(ex_image.shape)
                     for i in range(len(ex_image)):
@@ -329,9 +329,9 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         name         = info['name']
         patch = info['patches']
         seg_model=load_model_class(args.model)
-        model = seg_model(3,1).cuda()
+        model = seg_model(1,1).cuda()
         if patch:
-            _=model(torch.rand(1,3,args.patch_size,args.patch_size).cuda())
+            _=model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
         model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
@@ -356,7 +356,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=3e-6)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=2e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,
