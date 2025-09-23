@@ -36,11 +36,11 @@ def apply_gamma_correction(orimage, gamma=1.4):
 def preprocessing_img(path):
     img=cv2.imread(path,1)
     b,g,r=img.transpose(2,0,1)
-    new_g=cv2.createCLAHE(12,(12,12)).apply(g.astype(np.uint8))
+    new_g=cv2.createCLAHE(7,(12,12)).apply(g.astype(np.uint8))
     new_b=wiener(cv2.createCLAHE(7,(12,12)).apply(b).astype(np.float32),7)
     new_img = np.array([r,new_g,new_b]).transpose(1,2,0)
     out=convert_gray(new_img.clip(0,255))
-    return apply_gamma_correction(out)
+    return out
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:
@@ -128,10 +128,10 @@ def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
     sh = (H - ph) // (target_patches_per_dim[0] - 1) if target_patches_per_dim[0] > 1 else H
     sw = (W - pw) // (target_patches_per_dim[1] - 1) if target_patches_per_dim[1] > 1 else W
 
-    patches = kornia.contrib.extract_tensor_patches(img, (ph, pw), stride=(sh, sw),allow_auto_padding=True).flatten(0,1)
+    patches = kornia.contrib.extract_tensor_patches(img, (ph, pw), stride=(sh, sw),allow_auto_padding=False).flatten(0,1)
     return patches, (sh, sw)
 def reverse_to_original_image(patches, original_size,patch_size,stride):
-    original_image = kornia.contrib.combine_tensor_patches(patches, original_size=original_size,window_size=patch_size,stride=stride,allow_auto_unpadding=True)
+    original_image = kornia.contrib.combine_tensor_patches(patches, original_size=original_size,window_size=patch_size,stride=stride,allow_auto_unpadding=False)
     return original_image
 
    

@@ -10,32 +10,32 @@ from bottle_neck_1 import CustomBottleNeck1
 class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.down_image = nn.Conv2d(in_channel,64,2,2,bias=False) #b,3,256,256
+        self.down_image = nn.Conv2d(in_channel,32,2,2,bias=False) #b,3,256,256
         
-        self.encode_0 = down_sampling(64,128) #b,8,256,256/b,8,128,128
-        self.encode_1 = down_sampling(128,256) #b,16,128,128/b,16,64,64
+        self.encode_0 = down_sampling(32,64) #b,8,256,256/b,8,128,128
+        self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
 
-        self.bottle_neck =nn.Sequential(CustomBottleNeck1(256,256),BottleNeck(256))
+        self.bottle_neck =nn.Sequential(Conv_func(128,128),BottleNeck(128),CustomBottleNeck1(128,128))
 
 
-        self.decode_1_0 = Up_sampling(256,128) #b,16,128,128
-        self.decode_1_1 = Up_sampling(256,128)#b,16,128,128
+        self.decode_1_0 = Up_sampling(128,64) #b,16,128,128
+        self.decode_1_1 = Up_sampling(128,64)#b,16,128,128
 
-        self.up_encode_1 =  nn.ConvTranspose2d(256,128,kernel_size=2,stride=2,bias=False)
+        self.up_encode_1 =  nn.ConvTranspose2d(128,64,kernel_size=2,stride=2,bias=False)
 
-        self.decode_0_0  = Up_sampling(128,64)#b,8,256,256
-        self.decode_0_1  = Up_sampling(128,64)#b,8,256,256
+        self.decode_0_0  = Up_sampling(64,32)#b,8,256,256
+        self.decode_0_1  = Up_sampling(64,32)#b,8,256,256
 
         self.out = nn.Sequential(
-            nn.Conv2d(64*2,64,1,bias=False),
-            Unpooling_func(64,out_channel,2),
+            nn.Conv2d(32*2,32,1,bias=False),
+            Unpooling_func(32,out_channel,2),
             nn.Sigmoid()
         )
 
-        self.down = nn.Conv2d(128,256,2,2,bias=False)
-        self.change_down = nn.Conv2d(256*2,256,1,bias=False)
-        self.up = nn.ConvTranspose2d(128,64,2,2,bias=False)
-        self.change_up = nn.Conv2d(64*2,64,1,bias=False)
+        self.down = nn.Conv2d(64,128,2,2,bias=False)
+        self.change_down = nn.Conv2d(128*2,128,1,bias=False)
+        self.up = nn.ConvTranspose2d(64,32,2,2,bias=False)
+        self.change_up = nn.Conv2d(32*2,32,1,bias=False)
         
 
     def forward(self,x):
