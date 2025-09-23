@@ -15,13 +15,11 @@ from data_preparation import get_all_training_set
 from torch.multiprocessing import Process, Queue
 from load_model import load_model_class,load_loss_class
 import wandb
-from timm.models.maxxvit import window_partition,window_reverse
 import math
-import kornia
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=1)
-parser.add_argument("-e", "--epochs",type=int, default=100)
+parser.add_argument("-e", "--epochs",type=int, default=50)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
 parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
@@ -181,9 +179,9 @@ class Trainer:
                 save_e = e
         if best_metrics and best_params:
                 torch.cuda.empty_cache()
-                best_model=load_model_class(args.model)(3,1).cuda()
+                best_model=load_model_class(args.model)(1,1).cuda()
                 if self.patch:
-                    _=best_model(torch.rand(1,3,args.patch_size,args.patch_size).cuda())
+                    _=best_model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
                 best_model.zero_grad()
                 best_model.load_state_dict({k: v.cuda() for k, v in best_params.items()},strict=False)
                 best_model.eval()
@@ -331,9 +329,9 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         name         = info['name']
         patch = info['patches']
         seg_model=load_model_class(args.model)
-        model = seg_model(3,1).cuda()
+        model = seg_model(1,1).cuda()
         if patch:
-            _=model(torch.rand(1,3,args.patch_size,args.patch_size).cuda())
+            _=model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
         model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
@@ -358,7 +356,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
 
             criterion = load_loss_class(args.loss)()
             optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=3e-6)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=2e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,

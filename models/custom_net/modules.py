@@ -233,7 +233,7 @@ class Up_sampling(nn.Module):
         self.up = Unpooling_func(in_channel,out_channel,scale_factor=scale_factor)
 
         self.out =  nn.Sequential(
-            Residual_net(out_channel*2,out_channel,3)
+            Conv_func(in_channel*2,out_channel,3),
             )
     def forward(self,x,x_encode):
         up = self.up(x)

@@ -2,16 +2,20 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
-from bottle_neck import * 
-
+from bottle_neck import BottleNeck
+from bottle_neck_1 import CustomBottleNeck1
+# import sys
+# import torch.nn.functional as F
 
 class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
         self.down_image = nn.Conv2d(in_channel,3,kernel_size=2,stride=2,bias=False) #b,3,256,256
         
-        self.encode_0 = down_sampling(3,64) #b,8,256,256/b,8,128,128
-        self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
+        self.encode_0 = down_sampling(64,128) #b,8,256,256/b,8,128,128
+        self.encode_1 = down_sampling(128,256) #b,16,128,128/b,16,64,64
+
+        self.bottle_neck =nn.Sequential(CustomBottleNeck1(256,256),BottleNeck(256))
 
         self.bottle_neck = nn.Sequential(
             CustomBottleNeck1(128, 256)

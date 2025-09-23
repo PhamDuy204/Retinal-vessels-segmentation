@@ -87,32 +87,13 @@ class CustomTrainDataset(Dataset):
             
                     patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
 
-                    filter=patches_mask.sum((-1,-2))>=5
+                    filter_=patches_mask.sum((-1,-2))>=5
                     # print(filter.shape)
-                    patches_image=patches_image.unsqueeze(1)[filter]
+                    patches_image=patches_image.unsqueeze(1)[filter_]
                     # print(patches_image.shape)
-                    patches_mask=patches_mask[filter]
-                    patches_edge=patches_edge[filter].unsqueeze(1)
-
-                # num_sample_index=[i for i in range(len(patches_image)) if i not in self.index_patch[index]]
-                # random.shuffle(num_sample_index)
-                num_sample =torch.randperm(len(patches_image))[:670]
-                # self.index_patch[index].extend(num_sample)
-                # crop_transfroms=RandomResizedCropBoth((self.patch_size,self.patch_size))
-                # device ='cuda' if torch.cuda.is_available() else 'cpu'
-                # aug =  K.AugmentationSequential(K.RandomPlanckianJitter(mode='CIED', p=0.7,keepdim=True),
-                #                                 K.RandomEqualize(p=0.7,keepdim=True)).to(device)
-                # #                                 ,data_keys=["input", "mask"]).to(device)
-                # # aug=K.RandomPlanckianJitter(mode='CIED', p=0.9).to(device)
-                # if len(patches_image)-len(self.index_patch[index])<800:
-                #     self.index_patch[index]=[]
-                # if len(num_sample)<670:
-                #     random.shuffle(self.index_patch[index])
-                #     num_sample.extend((self.index_patch[index][:670]))
-                #     num_sample=num_sample[:670]
-                # patches_image,patches_mask=aug(patches_image.to(device),patches_mask.to(device))
-                # patches_image=aug_2(patches_image)
-                # print(torch.unique(patches_mask))
+                    patches_mask=patches_mask[filter_]
+                    patches_edge=patches_edge[filter_].unsqueeze(1)
+                num_sample =torch.randperm(len(patches_image))[:750]
                 return {
                     'image':patches_image[num_sample],
                     'mask':patches_mask.long().squeeze()[num_sample],

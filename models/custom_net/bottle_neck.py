@@ -8,6 +8,18 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 # from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
 # from mamba_ssm import Mamba2
+from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
+from mamba_ssm import Mamba2
+
+class FeedForward(nn.Module):
+    def __init__(self, dimension,dropout=0.0):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(dimension, dimension * 4),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dimension * 4,dimension),
+        )
 
 # class FeedForward(nn.Module):
 #     def __init__(self, dimension,dropout=0.0):
