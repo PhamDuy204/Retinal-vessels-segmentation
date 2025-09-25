@@ -12,6 +12,3 @@ torchmetrics
 onnx
 PyWavelets
 kornia
-mamba-ssm
-causal-conv1d
-pytorch_wavelets

@@ -8,8 +8,8 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 # from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
 # from mamba_ssm import Mamba2
-from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
-from mamba_ssm import Mamba2
+# from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
+# from mamba_ssm import Mamba2
 
 class FeedForward(nn.Module):
     def __init__(self, dimension,dropout=0.0):
@@ -323,30 +323,30 @@ import torch
 import torch.nn as nn
 
 
-class Depthwise(nn.Module): 
-    def __init__(self, in_channels, out_channels, kernel_size): 
-        super(Depthwise, self).__init__() 
-        self.depthwise = nn.Conv2d( in_channels=in_channels, out_channels=in_channels, 
-            groups=in_channels, kernel_size=kernel_size, padding='same'
-        )
-        self.group_norm = nn.GroupNorm(num_groups=in_channels, num_channels=in_channels, affine=False)
-        self.pointwise = nn.Conv2d( in_channels=in_channels, out_channels=out_channels, 
-            kernel_size=1, padding='same'
-        )
+# class Depthwise(nn.Module): 
+#     def __init__(self, in_channels, out_channels, kernel_size): 
+#         super(Depthwise, self).__init__() 
+#         self.depthwise = nn.Conv2d( in_channels=in_channels, out_channels=in_channels, 
+#             groups=in_channels, kernel_size=kernel_size, padding='same'
+#         )
+#         self.group_norm = nn.GroupNorm(num_groups=in_channels, num_channels=in_channels, affine=False)
+#         self.pointwise = nn.Conv2d( in_channels=in_channels, out_channels=out_channels, 
+#             kernel_size=1, padding='same'
+#         )
         
-    def forward(self, X): 
-        x = self.depthwise(X) 
-        x = self.group_norm(x) 
-        x = self.pointwise(x) 
-        return x 
+#     def forward(self, X): 
+#         x = self.depthwise(X) 
+#         x = self.group_norm(x) 
+#         x = self.pointwise(x) 
+#         return x 
 
 
 class VGG(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(VGG, self).__init__() 
-        self.conv1 = Depthwise(in_channels=in_channels, out_channels=in_channels, kernel_size=3)
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3)
         self.gelu1 = nn.GELU()
-        self.conv2 = Depthwise(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
         self.gelu2 = nn.GELU() 
 
     def forward(self, X): 
@@ -360,9 +360,9 @@ class VGG(nn.Module):
 class ResNet(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(ResNet, self).__init__() 
-        self.conv1 = Depthwise(in_channels=in_channels, out_channels=in_channels, kernel_size=3) 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3) 
         self.gelu1 = nn.GELU()
-        self.conv2 = Depthwise(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
         self.gelu2 = nn.GELU() 
 
         if in_channels != out_channels:

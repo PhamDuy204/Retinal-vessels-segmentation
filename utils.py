@@ -33,14 +33,14 @@ def apply_gamma_correction(orimage, gamma=1.4):
     gamma_corrected = np.uint8((gamma_corrected* 255).clip(0,255))
     # gamma_corrected= np.uint8((1-gamma_corrected.astype(float)/ 255.0) * 255)
     return gamma_corrected
-def preprocessing_img(path):
-    img=cv2.imread(path,1)
-    b,g,r=img.transpose(2,0,1)
-    new_g=cv2.createCLAHE(12,(12,12)).apply(g.astype(np.uint8))
-    new_b=wiener(cv2.createCLAHE(7,(12,12)).apply(b).astype(np.float32),7)
-    new_img = np.array([r,new_g,new_b]).transpose(1,2,0)
-    out=convert_gray(new_img.clip(0,255))
-    return apply_gamma_correction(out)
+def preprocess_simple(path):
+    img = cv2.imread(path, 1)
+    g_channel = img[:, :, 1] # Green channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced_g = clahe.apply(g_channel)
+    # Normalize
+    normalized_img = (enhanced_g - np.mean(enhanced_g)) / np.std(enhanced_g)
+    return normalized_img
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:
