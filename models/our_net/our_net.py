@@ -7,15 +7,16 @@ from bottle_neck import *
 class SegModel(nn.Module):
     def __init__(self, in_channels,out_channels):
         super().__init__()
-        self.down_0=down_sampling(in_channels,32) #64,64,64->64,32,32
-        self.down_1=down_sampling(32,64) #128,32,32->128,16,16
+        self.down_0=down_sampling(in_channels,64) #64,64,64->64,32,32
+        self.down_1=down_sampling(64,128) #128,32,32->128,16,16
         self.bneck= nn.Sequential(
-            residual(64,128,3,padding='same')
+            conv_func(128,256,3,padding='same'),
+            residual(256,256,3,padding='same')
         ) #128,16,16
-        self.up_0=up_sampling(128,64)  #128,32,32
-        self.up_1=up_sampling(64,32) #128,32,32
+        self.up_0=up_sampling(256,128)  #128,32,32
+        self.up_1=up_sampling(128,64) #128,32,32
         self.out=nn.Sequential(
-            nn.Conv2d(32,out_channels,1,bias=False),
+            nn.Conv2d(64,out_channels,1,bias=False),
             nn.Sigmoid()
         )
     def forward(self,x):
