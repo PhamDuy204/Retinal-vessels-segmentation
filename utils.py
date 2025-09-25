@@ -14,7 +14,7 @@ def convert_gray(image,weigh=np.array([0.299, 0.587, 0.114])):
     gray_img = image*weigh
     return np.sum(gray_img,-1)
 
-def unsharp_mask(image, ksize=(5,5), sigma=1.0, amount=1.0):
+def unsharp_mask(image, ksize=(5,5), sigma=1.0, amount=2):
     blur = cv2.GaussianBlur(image, ksize, sigma)
     mask = cv2.subtract(image, blur)
     return cv2.addWeighted(image, 1.0, mask, amount, 0).clip(0,255)
@@ -26,21 +26,23 @@ def sobel_transform(image):
     sb = (sb_x+sb_y)/2
     return sb
 
-def apply_gamma_correction(orimage, gamma=1.4):
-    image=orimage.copy().astype(float)
-    image_normalized = (image / 255.0)
-    gamma_corrected = np.power(image_normalized, gamma)
-    gamma_corrected = np.uint8((gamma_corrected* 255).clip(0,255))
-    # gamma_corrected= np.uint8((1-gamma_corrected.astype(float)/ 255.0) * 255)
-    return gamma_corrected
+def apply_gamma_correction(orimage, gamma=1.2):
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    return cv2.LUT(np.array(orimage.copy(), dtype = np.uint8), table)
+
 def preprocessing_img(path):
-    img=cv2.imread(path,1)
-    b,g,r=img.transpose(2,0,1)
-    new_g=cv2.createCLAHE(7,(12,12)).apply(g.astype(np.uint8))
-    new_b=wiener(cv2.createCLAHE(7,(12,12)).apply(b).astype(np.float32),7)
-    new_img = np.array([r,new_g,new_b]).transpose(1,2,0)
-    out=convert_gray(new_img.clip(0,255))
-    return out
+    mean_=73.00342685729963
+    std_=54.45611922239714
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+
+    img=np.array(Image.open(path).convert('RGB'))
+    gray=convert_gray(img)
+    gray=(gray-mean_)/std_
+    gray=((gray-np.min(gray))/(np.max(gray)-np.min(gray)))*255
+    
+    gray=clahe.apply(np.array(gray,dtype=np.uint8))
+    return unsharp_mask(apply_gamma_correction(gray,1.2))
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:

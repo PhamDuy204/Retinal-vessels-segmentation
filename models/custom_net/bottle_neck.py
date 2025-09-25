@@ -66,16 +66,17 @@ class MultiHeadAttention(nn.Module):
 
 
 class BottleNeck(nn.Module):
-    def __init__(self, dimension,n_heads=1,dropout=0.0,n_experts=4,slots_per_expert=2,d_state=32):
+    def __init__(self, dimension,n_heads=1,dropout=0.0,n_experts=4,slots_per_expert=2,d_state=16):
         super().__init__()
-        self.pre_norm=nn.LayerNorm(dimension,bias=False)
-        self.rev_pre_norm=nn.LayerNorm(dimension,bias=False)
-        self.post_norm=nn.LayerNorm(dimension,bias=False)
+        self.pre_norm=nn.RMSNorm(dimension,0.00001)
+        self.rev_pre_norm=nn.RMSNorm(dimension,0.00001)
+        self.post_norm=nn.RMSNorm(dimension,0.00001)
         self.mamba=Mamba2(dimension,d_state,conv_bias=False)
         self.mamba2=Mamba2(dimension,d_state,conv_bias=False)
         self.merge=nn.Sequential(
-            nn.Linear(2*dimension,dimension,bias=False),
-            nn.LeakyReLU())
+            nn.Linear(2*dimension,dimension//2,bias=False),
+            nn.GELU(),
+            nn.Linear(dimension//2,dimension,bias=False),)
         # self.ff_0=SoftMoe(dimension,n_experts,slots_per_expert,dropout)
         # self.mha=MultiHeadAttention(dimension,n_heads,dropout)
         # self.ff_1=SoftMoe(dimension,n_experts,slots_per_expert,dropout)

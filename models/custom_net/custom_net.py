@@ -10,12 +10,13 @@ from bottle_neck_1 import CustomBottleNeck1
 class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.down_image = nn.Conv2d(in_channel,32,2,2,bias=False) #b,3,256,256
+        self.change_sample=ChoiseSample(in_channel,3,32)
+        self.down_image = nn.Conv2d(32,32,2,2,bias=False) #b,3,256,256
         
         self.encode_0 = down_sampling(32,64) #b,8,256,256/b,8,128,128
         self.encode_1 = down_sampling(64,128) #b,16,128,128/b,16,64,64
 
-        self.bottle_neck =nn.Sequential(Conv_func(128,128),BottleNeck(128),CustomBottleNeck1(128,128))
+        self.bottle_neck =nn.Sequential(BottleNeck(128))
 
 
         self.decode_1_0 = Up_sampling(128,64) #b,16,128,128
@@ -47,7 +48,7 @@ class SegModel(nn.Module):
         # Yl, Yh = dwt(x)
         # frequency = torch.mean(Yh[0],2)
 
-
+        x=self.change_sample(x)
         down_image = self.down_image(x) #b,3,256,256
         # print(down_image.shape)
         conv_0,down_0 = self.encode_0(down_image) #b,8,256,256/b,8,128,128

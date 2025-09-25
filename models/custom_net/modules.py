@@ -1,197 +1,49 @@
 import torch
+import numpy as np
 import torch.nn as nn
 import math
 import torch.nn.functional as F
 from timm.models.swin_transformer import window_partition,window_reverse
-from soft_moe_pytorch import DynamicSlotsSoftMoE
 from einops.layers.torch import Rearrange
 from mamba_ssm import Mamba
 from timm.models.layers import DropPath
 from timm.models.swin_transformer_v2 import SwinTransformerV2Block
-class TSB(nn.Module): 
-    def __init__(self, in_channels, out_channels): 
-        super(TSB, self).__init__() 
-        
-        # Layer 1 
-        self.conv11 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                               groups=in_channels, kernel_size=3, padding='same')
-        self.conv12 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                                groups=in_channels, kernel_size=5, padding='same')
-        self.conv13 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                                groups=in_channels, kernel_size=7, padding='same')
-        
-        # Layer 2
-        self.conv21 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
-        self.conv22 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
-        self.conv23 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
-                                kernel_size=1, padding='same')
-        
-        # Layer 3
-        self.conv31 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
-        self.conv32 = nn.Conv2d(in_channels=out_channels*3, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
-        
-
-    def forward(self, X): 
-        x11 = self.conv11(X) 
-        x12 = self.conv12(X) 
-        x13 = self.conv13(X) 
-
-        x21 = self.conv21(x11)
-        x22 = self.conv22(x12) 
-        x23 = self.conv23(x13) 
-
-        x22 = x22 + x21 
-        x23 = x23 + x22 
-
-        x31 = self.conv31(X) 
-        x32 = torch.concat([x21, x22, x23], dim=1)
-        x32 = self.conv32(x32)
-
-        out = x31 + x32
-
-        return out  
-
-
-
-class CustomBottleNeck(nn.Module): 
-    def __init__(self, in_channels, out_channels):
-        super(CustomBottleNeck, self).__init__() 
-
-        self.conv_1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                                groups=in_channels, kernel_size=3, padding='same')
-        self.sigmoid_1 = nn.Sigmoid() 
-
-        self.conv_2 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                                groups=in_channels, kernel_size=3, padding='same')
-        self.sigmoid_2 = nn.Sigmoid() 
-
-        self.conv_mid = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                                  groups=in_channels, kernel_size=5, padding='same')
-        
-        self.groupnorm = nn.GroupNorm(num_groups=in_channels, num_channels=in_channels, 
-                                      affine=False)
-        
-        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                              groups=in_channels, kernel_size=3, padding='same') 
-        
-        self.tsb = TSB(in_channels=in_channels, out_channels=out_channels)
-
-    def forward(self, X): 
-        x_1 = self.conv_1(X)
-        x_1 = self.sigmoid_1(x_1) 
-
-        x_2 = self.conv_2(X) 
-        x_2 = self.sigmoid_2(x_2)
-
-        x_mid = self.conv_mid(X) 
-
-        x = x_1 + x_mid + x_2
-        x = self.groupnorm(x) 
-        x = self.conv(x) 
-
-        x = x + X 
-
-        out = self.tsb(x) 
-
-        return out 
-# class CustomActivation(nn.Module):
-#   def __init__(self):
-#     super().__init__()
-#     self.w0 = nn.Parameter(torch.tensor(0.01))
-#     self.w1 = nn.Parameter(torch.tensor(1.))
-#     self.w2 = nn.Parameter(torch.tensor(1.))
-#     self.w3 = nn.Parameter(torch.tensor(1.))
-#     self.b = nn.Parameter(torch.tensor(0.))
-#   def forward(self,x):
-#     res = torch.where(x > 0,torch.log1p(torch.abs(self.w3*(x**3)+self.w2*(x**2)+self.w1*x+self.b)),(self.w0**2)*x)
-#     return res
-
-# class aulu(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.beta = nn.Parameter(torch.tensor(0.5),requires_grad=True)
-#         self.alpha = nn.Parameter(torch.tensor(0.5),requires_grad=True)
-#     def forward(self,x):
-#         # rs = torch.where(x >= 0,x*nn.Sigmoid()(x*self.alpha),x*nn.Sigmoid()(x*(self.beta)))
-#         rs = x*nn.Sigmoid()(x)
-#         return rs
-
-
-class Conv_func_1(nn.Module):
-    def __init__(self,in_channel,out_channel,kernel,padding='same',stride=1,dilation=1,norm=True,activation=True):
+class ChoiseSample(nn.Module):
+    def __init__(self,in_channels,kernel_size,num_sample):
         super().__init__()
-        self.in_channel = in_channel
-        self.out_channel = out_channel
-        self.kernel = kernel
-        self.padding = padding
-        self.stride = stride
-        self.dilation = dilation
-        self.norm=norm
-        self.activation=activation
-        if self.norm:
-            self.norm_func=nn.GroupNorm(out_channel,out_channel,affine=False)
-        # self.w = nn.Parameter(torch.rand(kernel*kernel*in_channel,out_channel),requires_grad=True)
-        # nn.init.kaiming_normal_(self.w, mode='fan_out', nonlinearity='relu')
-        # self.conv=nn.Conv2d(in_channel,out_channel,kernel,padding=padding,stride=stride,dilation=dilation)
-        self.router = nn.Sequential(
-            nn.Linear(3,128,bias=False),
-            nn.RMSNorm(128,elementwise_affine=True),
-            nn.ReLU(),
-            nn.Linear(128,1,bias=False),nn.Sigmoid())
-        self.experts =  nn.ModuleList([nn.Sequential(nn.Linear(self.in_channel,self.out_channel,bias=False),nn.SiLU()) for _ in range(self.kernel*self.kernel)])
+        self.params = nn.ParameterList()
+        fan_in = in_channels * kernel_size * kernel_size
+        fan_out = fan_in  # nếu bạn muốn, có thể chỉnh cho phù hợp với output
+        a = (6.0 / (fan_in + fan_out)) ** 0.5  # công thức Xavier Uniform
+
+        for _ in range(num_sample):
+            w = torch.empty(fan_in)
+            nn.init.uniform_(w, -a, a)  # Xavier uniform init
+            self.params.append(nn.Parameter(w))
+        self.num_sample=num_sample
+        self.kernel_size=kernel_size
     def forward(self,x):
-        b,c,h,w = x.shape
-        if self.padding=='same' and isinstance(self.padding,str):
-            pad_w=((x.shape[-1]-1)*self.stride+self.dilation*(self.kernel-1)+1-x.shape[-1])/2
-            pad_h=((x.shape[-2]-1)*self.stride+self.dilation*(self.kernel-1)+1-x.shape[-2])/2
-            pad_=(int(math.ceil(pad_h)),int(math.floor(pad_w)),int(math.ceil(pad_h)),int(math.floor(pad_w)))
-        else:
-            pad_=(self.padding,self.padding,self.padding,self.padding)
+        b,c,h,w=x.shape
+        s=max(self.kernel_size//2,1)
+        unfold_x=F.unfold(x,self.kernel_size,1,0,stride=s).permute(0,2,1)
+        ones_=F.fold(torch.ones_like(unfold_x).permute(0,2,1),(h,w),self.kernel_size,1,0,s)
+        out=[]
 
-
-        x=torch.nn.functional.pad(x,pad_,value=0)
-        # print(padded_x.shape)
-        b,c,h_new,w_new = x.shape
-        # print(padded_x.shape)
-        if self.padding=='same':
-            x = F.unfold(x,kernel_size=self.kernel,stride =self.stride,dilation=self.dilation).permute(0,2,1).reshape(b,h,w,c,self.kernel*self.kernel).permute(0,1,2,4,3)
-        
-        else:
-           
-            x = F.unfold(x,kernel_size=self.kernel,stride =self.stride,dilation=self.dilation).permute(0,2,1).reshape(b,int(((h_new-self.dilation*(self.kernel-1)-1)/self.stride)+1),int(((w_new-self.dilation*(self.kernel-1)-1)/self.stride)+1),c,self.kernel*self.kernel).permute(0,1,2,4,3)
-        b,h,w,_,_ = x.shape
-        router=self.router(torch.cat((x.max(-1).values.unsqueeze(-1),x.mean(-1).unsqueeze(-1),x.std(-1).unsqueeze(-1)),-1)).flatten(-2)
-        # router>router.mean(-1).unsqueeze(-1)
-        output = torch.zeros(b,h,w,self.out_channel).to(x.device)
-        # if self.training:
-        #     noise = torch.rand_like(router)
-        #     router+=noise.to(router.device)
-        
-        # logits,indices = router.topk(4,-1)     
-        # print(logits)
-        # print(indices) 
-        # inf_matrix = torch.where(router>router.mean(-1).unsqueeze(-1),router,-torch.inf)
-
-        # router = F.sigmoid(router)
-        # print(fill_zero_gate)
-        
-        # prob = nn.Softmax(-1)(self.router(fill_zero_gate.flatten(-2)))
-        
-        # # print(self.experts[0](prob[...,0].unsqueeze(-1)*tmp_x[...,0,:]))
-        
-        for i in range(self.kernel*self.kernel):
-            output += self.experts[i](x[...,i,:])*router[...,i].unsqueeze(-1)
-        output= output.permute(0,3,1,2).contiguous()
-        if self.norm:
-            output=self.norm_func(output)
-        if self.activation:
-            output=nn.ReLU()(output)
-        return output
-
+        for param in self.params:
+            tanh_p=F.tanh(param)+1
+            # if (np.random.rand()>0.3) and (self.train==True):
+            #     noise=torch.randn_like(unfold_x)*0.03
+            # else:noise=0
+            unfold_x_1=unfold_x*tanh_p+tanh_p-1
+            unfold_x_1=F.fold(unfold_x_1.permute(0,2,1),(h,w),self.kernel_size,1,0,s)/ones_
+            unfold_x_1=unfold_x_1.mean(1,keepdim=True)
+            if (np.random.rand()>0.3) and (self.train==True):
+                noise=torch.randn_like(unfold_x_1)
+            else:
+                noise=0
+            unfold_x_1+=noise
+            out.append((unfold_x_1+x)/2)
+        return torch.cat(out,1)
 class deepwide_block(nn.Module):
     def __init__(self,in_channel,out_channel,kernel=3,stride=1,dilation=1):
         super().__init__()
@@ -262,16 +114,6 @@ class ulaula(nn.Module):
         return self.out(x)
 
 
-class Residual_net_1(nn.Module):
-    def __init__(self,in_channel,out_channel,kernel=3):
-        super().__init__()
-        self.feature = nn.Sequential(
-            Conv_func(in_channel,out_channel,kernel = kernel),
-            Conv_func_1(out_channel,out_channel,kernel = kernel))
-        self.change_feature = Conv_func_1(in_channel,out_channel,3,padding='same',activation=True)
-    def forward(self,x):
-        return self.change_feature(x)+self.feature(x)
-
 class Conv_func(nn.Module):
     def __init__(self,in_channel,out_channel,kernel=3):
         super().__init__()
@@ -323,7 +165,9 @@ class Up_sampling(nn.Module):
         self.up = Unpooling_func(in_channel,in_channel,scale_factor=scale_factor)
 
         self.out =  nn.Sequential(
-            Conv_func(in_channel*2,out_channel,3),
+            Residual_net(in_channel*2,out_channel,3),
+            ulaula(out_channel),
+            Residual_net(out_channel,out_channel,3)
             )
     def forward(self,x,x_encode):
         up = self.up(x)

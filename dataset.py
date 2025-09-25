@@ -9,9 +9,10 @@ from torch.utils.data import Dataset
 from utils import *
 from albumentations.pytorch import ToTensorV2
 import kornia.augmentation as K
-# from torchvision.transforms import functional as F
-# from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as F
+from torchvision.transforms import InterpolationMode
 # import torchvision
+
 import random
 
 # class RandomResizedCropBoth:
@@ -30,7 +31,7 @@ import random
 #             mask  = F.resized_crop(mask,  i, j, h, w, self.size, InterpolationMode.NEAREST)
 #             edge  = F.resized_crop(edge,  i, j, h, w, self.size, InterpolationMode.NEAREST)
 #         return image, mask,edge
-
+    
 class CustomTrainDataset(Dataset):
     def __init__(self,root_path,img_transforms=None,with_patches = False,num_patches=500,patch_size=64,type_split='random'):
         self.image_paths =  sorted(glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
@@ -81,24 +82,36 @@ class CustomTrainDataset(Dataset):
                     # print(edge.shape)
                     # h_i,w_i=image.shape[-2:]
                     # condition=int(h_i>w_i)
-                    num_patch=((h-self.patch_size)//16+1,(w-self.patch_size)//16+1)
+                    num_patch=((h-self.patch_size)//8+1,(w-self.patch_size)//8+1)
 
                     patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
                     patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
             
                     patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
 
-                    filter_=patches_mask.sum((-1,-2))>=5
+                    filter_=patches_mask.sum((-1,-2))>=1
                     # print(filter.shape)
                     patches_image=patches_image.unsqueeze(1)[filter_]
                     # print(patches_image.shape)
                     patches_mask=patches_mask[filter_]
                     patches_edge=patches_edge[filter_].unsqueeze(1)
-                num_sample =torch.randperm(len(patches_image))[:1000]
+                aug = K.AugmentationSequential(
+                        K.RandomCrop((self.patch_size-self.patch_size//4, self.patch_size-self.patch_size//4), same_on_batch=True,p=0.5),
+                        K.PadTo((self.patch_size, self.patch_size)),   # padding để khôi phục shape gốc
+                        data_keys=["input", "mask"]
+                    ).cuda()
+                num_sample =torch.randperm(len(patches_image))[:2000]
+                patches_image=patches_image[num_sample]
+                patches_mask=patches_mask.long()[num_sample]
+                
+                if len(patches_mask.shape)<4:
+                    patches_mask=patches_mask.unsqueeze(1)
+                patches_edge=patches_edge[num_sample]
+                patches_image,patches_mask=aug(patches_image.cuda(),patches_mask.cuda())
                 return {
-                    'image':patches_image[num_sample],
-                    'mask':patches_mask.long().squeeze()[num_sample],
-                    'edge':patches_edge[num_sample]
+                    'image':patches_image,
+                    'mask':patches_mask.squeeze(),
+                    'edge':patches_edge
                 }
 
         else:

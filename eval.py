@@ -35,7 +35,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             stride=None
             if patch and type_split!='random':
                 # condition=int(H>W)
-                num_patch=((H-patch_size)//16+1,(W-patch_size)//16+1)
+                num_patch=((H-patch_size)//16+1,(W-patch_size)//8+1)
                 image,tmp_stride = extract_patches_with_target_count(image,patch_size,num_patch)
                 edge,_ = extract_patches_with_target_count(edge,patch_size,num_patch)
                 stride=tmp_stride
@@ -65,7 +65,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
                 #     prob = prob[:,:,:h,:w]
                 if stride is not None:
                     prob = prob.view(B,-1,1,patch_size,patch_size)
-                    prob_1=torch.where(prob>0.5,1.,0.)
+                    prob_1=torch.where(prob>0.49,1.,0.)
 
                     prob=reverse_to_original_image(prob,(H,W),patch_size,stride)
                     prob_1=reverse_to_original_image(prob_1,(H,W),patch_size,stride)
