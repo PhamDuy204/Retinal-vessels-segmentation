@@ -35,7 +35,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             stride=None
             if patch and type_split!='random':
                 # condition=int(H>W)
-                num_patch=(64,64)
+                num_patch=((H-patch_size)//16+1,(W-patch_size)//8+1)
                 image,tmp_stride = extract_patches_with_target_count(image,patch_size,num_patch)
                 edge,_ = extract_patches_with_target_count(edge,patch_size,num_patch)
                 stride=tmp_stride
@@ -46,7 +46,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
 
                 # image = window_partition(image.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
                 # edge = window_partition(edge.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
-            chunk_size = max(image.shape[0]//200,1)
+            chunk_size = max(image.shape[0]//128,1)
             chunk_image = torch.chunk(image,chunk_size,0)
             chunk_edge = torch.chunk(edge,chunk_size,0)
             for chunk in zip(chunk_image,chunk_edge):
@@ -65,15 +65,23 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
                 #     prob = prob[:,:,:h,:w]
                 if stride is not None:
                     prob = prob.view(B,-1,1,patch_size,patch_size)
+                    prob_1=torch.where(prob>0.49,1.,0.)
+
                     prob=reverse_to_original_image(prob,(H,W),patch_size,stride)
+                    prob_1=reverse_to_original_image(prob_1,(H,W),patch_size,stride)
+                    
             h, w = mask.shape[-2:]
             prob = prob[:,:,:h,:w]
             prob= prob.squeeze().detach().cuda().flatten()
+
+            prob_1 = prob_1[:,:,:h,:w]
+            prob_1= prob_1.squeeze().detach().cuda().flatten()
+
             mask = mask.squeeze().detach().cuda().flatten()
             # print(mask.dtype)
             # print(prob.dtype)
 
-            pred_mask = torch.where(prob>=0.5,1,0)
+            pred_mask = torch.where(prob_1>=0.5,1,0)
 
             acc_metric.update(pred_mask, mask)
             f1_metric.update(pred_mask, mask)
