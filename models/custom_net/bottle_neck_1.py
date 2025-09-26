@@ -7,7 +7,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat
 
-
+class EFB(nn.Module):
+    def __init__(self, in_channels,out_channels):
+        super().__init__()
+        self.norm_x=nn.GroupNorm(1,in_channels)
+        self.dw_0=nn.Conv2d(in_channels,in_channels,3,bias=False,groups=in_channels)
+        self.dw_1=nn.Conv2d(in_channels,in_channels,3,bias=False,groups=in_channels)
+        self.conv=nn.Conv2d(in_channels,in_channels,3,bias=False)
+        self.ff=nn.Sequential(nn.Conv2d(in_channels,2*in_channels,1,bias=False),
+                              nn.GroupNorm(1,2*in_channels),
+                              nn.GELU(),
+                              nn.Conv2d(2*in_channels,in_channels,1,bias=False))
+        self.out=nn.Conv2d(in_channels,out_channels,1,bias=False)
+    def forward(self,x):
+        x=self.norm_x(x)
+        dw_0=self.dw_0(x)
+        dw_1=self.dw_1(x)
+        conv=self.conv(x)
+        attn=F.sigmoid(dw_0)*dw_1
+        out = conv+attn
+        return self.out(self.ff(out)+out)
+        
 class TSB(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(TSB, self).__init__() 

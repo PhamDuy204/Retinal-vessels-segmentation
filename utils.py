@@ -34,7 +34,7 @@ def apply_gamma_correction(orimage, gamma=1.2):
 def preprocessing_img(path):
     mean_=73.00342685729963
     std_=54.45611922239714
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8,8))
 
     img=np.array(Image.open(path).convert('RGB'))
     gray=convert_gray(img)

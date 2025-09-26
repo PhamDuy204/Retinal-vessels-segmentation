@@ -49,7 +49,7 @@ class AbeDiceLoss(nn.Module):
         bce_loss = nn.BCELoss()(pred,truth)
         js_loss=1-(torch.sum(pred*truth)/(torch.sum(pred +truth -pred*truth)+1e-12))
             # loss+=(10*focal_loss+diceloss+mse_loss+bce_loss)*wl
-        focal_loss = torch.mean(-((1-pred)**2)*truth*torch.log(pred+1e-6)-(pred**2.5)*(1-truth)*torch.log((1-pred)+1e-6))
+        focal_loss = torch.mean(-((1-pred)**2)*truth*torch.log(pred+1e-6)-(pred**3)*(1-truth)*torch.log((1-pred)+1e-6))
         all_loss= diceloss+5*focal_loss+mse_loss+bce_loss+js_loss
         # print(all_loss)
         return all_loss

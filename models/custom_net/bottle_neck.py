@@ -64,7 +64,30 @@ class MultiHeadAttention(nn.Module):
         linear = self.linear(concat)
         return self.out_norm((self.dropout(linear)+concat)).view(b,h,w,c).permute(0,3,1,2).contiguous()
 
-
+class CAB(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.pre_norm=nn.GroupNorm(1,in_channels)
+        self.q=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.k=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.v=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.pj=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.ff=nn.Sequential(
+            nn.GroupNorm(1,in_channels),
+            nn.Conv2d(in_channels,in_channels,1,bias=False,groups=in_channels),
+            nn.GELU(),
+            nn.Conv2d(in_channels,in_channels,1,bias=False,groups=in_channels),
+        )
+    def forward(self, x):
+        b,c,h,w=x.shape
+        norm_x=self.pre_norm(x)
+        q=self.q(norm_x)
+        k=self.k(norm_x)
+        v=self.v(norm_x)
+        attn=F.sigmoid((q@k.transpose(-1,-2))/(h*w))
+        out=self.pj(v*attn)
+        t_stage=self.ff(out+x)
+        return t_stage+x
 class BottleNeck(nn.Module):
     def __init__(self, dimension,n_heads=1,dropout=0.0,n_experts=4,slots_per_expert=2,d_state=16):
         super().__init__()

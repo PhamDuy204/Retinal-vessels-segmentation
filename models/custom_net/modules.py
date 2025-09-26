@@ -8,6 +8,65 @@ from einops.layers.torch import Rearrange
 from mamba_ssm import Mamba
 from timm.models.layers import DropPath
 from timm.models.swin_transformer_v2 import SwinTransformerV2Block
+
+class MFSB(nn.Module):
+    def __init__(self, in_channels,out_channels,with_activation=True):
+        super().__init__()
+        self.sc1=nn.Sequential(
+            nn.Conv2d(in_channels,out_channels,3,padding='same',bias=False),
+            nn.GroupNorm(out_channels,out_channels),
+            nn.LeakyReLU()
+        )
+        self.sc2=nn.Sequential(
+            nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False),
+            nn.GroupNorm(in_channels,in_channels),
+            nn.LeakyReLU(),
+            nn.Conv2d(in_channels,out_channels,5,padding='same',bias=False),
+            nn.GroupNorm(out_channels,out_channels),
+            nn.LeakyReLU()
+        )
+        self.sc3=nn.Sequential(
+            nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False),
+            nn.GroupNorm(in_channels,in_channels),
+            nn.LeakyReLU(),
+            nn.Conv2d(in_channels,in_channels,5,padding='same',bias=False),
+            nn.GroupNorm(in_channels,in_channels),
+            nn.LeakyReLU(),
+            nn.Conv2d(in_channels,out_channels,7,padding='same',bias=False),
+            nn.GroupNorm(out_channels,out_channels),
+            nn.LeakyReLU()
+        )
+        self.norm=nn.Sequential(
+            nn.GroupNorm(out_channels,out_channels),
+            nn.LeakyReLU() if with_activation else nn.Identity()
+        )
+    def forward(self,x):
+        sc1=self.sc1(x)
+        sc2=self.sc2(x)
+        sc3=self.sc3(x)
+        return self.norm(sc1+sc2+sc3)
+    
+class EFB(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.norm_x=nn.GroupNorm(1,in_channels)
+        self.dw_0=nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False,groups=in_channels)
+        self.dw_1=nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False,groups=in_channels)
+        self.conv=nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False)
+        self.ff=nn.Sequential(nn.Conv2d(in_channels,2*in_channels,1,bias=False),
+                              nn.GroupNorm(1,2*in_channels),
+                              nn.GELU(),
+                              nn.Conv2d(2*in_channels,in_channels,1,bias=False))
+        self.norm=nn.GroupNorm(1,in_channels)
+    def forward(self,x):
+        x=self.norm_x(x)
+        dw_0=self.dw_0(x)
+        dw_1=self.dw_1(x)
+        conv=self.conv(x)
+        attn=F.sigmoid(dw_0)*dw_1
+        out = self.norm(conv+attn)
+        return nn.GELU()(self.ff(out)+out)
+    
 class ChoiseSample(nn.Module):
     def __init__(self,in_channels,kernel_size,num_sample):
         super().__init__()
@@ -44,41 +103,58 @@ class ChoiseSample(nn.Module):
             unfold_x_1+=noise
             out.append((unfold_x_1+x)/2)
         return torch.cat(out,1)
-class deepwide_block(nn.Module):
-    def __init__(self,in_channel,out_channel,kernel=3,stride=1,dilation=1):
-        super().__init__()
-        self.out = nn.Sequential(
-            nn.Conv2d(in_channel,out_channel,1,bias=False),
-            nn.ReLU(),
-            nn.Conv2d(out_channel,out_channel,kernel,padding='same',stride=stride,groups=out_channel,dilation=dilation,bias=False)
-        )
-        self.change = nn.Conv2d(in_channel,out_channel,1)
-    def forward(self,x):
-        return self.change(x)+self.out(x)
+# class deepwide_block(nn.Module):
+#     def __init__(self,in_channel,out_channel,kernel=3,stride=1,dilation=1):
+#         super().__init__()
+#         self.out = nn.Sequential(
+#             nn.Conv2d(in_channel,out_channel,1,bias=False),
+#             nn.ReLU(),
+#             nn.Conv2d(out_channel,out_channel,kernel,padding='same',stride=stride,groups=out_channel,dilation=dilation,bias=False)
+#         )
+#         self.change = nn.Conv2d(in_channel,out_channel,1)
+#     def forward(self,x):
+#         return self.change(x)+self.out(x)
 
-class multi_scope(nn.Module):
-    def __init__(self,in_channel,out_channel,kernel=3):
-        super().__init__()
-        self.b1 = deepwide_block(in_channel,out_channel,kernel,dilation=1)
-        self.b2 = deepwide_block(in_channel,out_channel,kernel,dilation=3)
-        self.b3 = deepwide_block(in_channel,out_channel,kernel,dilation=5)
+# class multi_scope(nn.Module):
+#     def __init__(self,in_channel,out_channel,kernel=3):
+#         super().__init__()
+#         self.b1 = deepwide_block(in_channel,out_channel,kernel,dilation=1)
+#         self.b2 = deepwide_block(in_channel,out_channel,kernel,dilation=3)
+#         self.b3 = deepwide_block(in_channel,out_channel,kernel,dilation=5)
 
-        self.change = nn.Conv2d(3*out_channel,out_channel,1,bias=False)
-    def forward(self,x):
-        return self.change(torch.cat((self.b1(x),self.b2(x),self.b3(x)),1))
+#         self.change = nn.Conv2d(3*out_channel,out_channel,1,bias=False)
+#     def forward(self,x):
+#         return self.change(torch.cat((self.b1(x),self.b2(x),self.b3(x)),1))
     
-class multi_scope_block(nn.Module):
-    def __init__(self,in_channel,out_channel,kernel=3):
+# class multi_scope_block(nn.Module):
+#     def __init__(self,in_channel,out_channel,kernel=3):
+#         super().__init__()
+        
+#         self.branch = multi_scope(in_channel,out_channel,kernel)
+#         self.change_feature = nn.Conv2d(in_channel,out_channel,1,bias=False)
+#         self.change = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+#     def forward(self,x):
+#         # new_x = self.change(torch.cat((x,x.permute(0,1,3,2)),1))
+        
+#         return self.change_feature(x)+self.branch(x)
+class Residual_net(nn.Module):
+    def __init__(self, in_channels,out_channels):
         super().__init__()
-        
-        self.branch = multi_scope(in_channel,out_channel,kernel)
-        self.change_feature = nn.Conv2d(in_channel,out_channel,1,bias=False)
-        self.change = nn.Conv2d(in_channel*2,in_channel,1,bias=False)
+        self.shortcut=MFSB(in_channels,out_channels,False)
+        self.msbfs=nn.ModuleList([
+                MFSB(in_channels,in_channels),
+                MFSB(in_channels,in_channels)
+        ])
+        self.conv=nn.Conv2d(in_channels,out_channels,1,bias=False)
+        self.eh=EFB(out_channels)
+        self.activation=nn.GELU()
     def forward(self,x):
-        # new_x = self.change(torch.cat((x,x.permute(0,1,3,2)),1))
-        
-        return self.change_feature(x)+self.branch(x)
 
+        shortcut=self.shortcut(x)
+        for block in self.msbfs:
+            x=x+block(x)
+        return self.eh(self.activation(self.conv(x)+shortcut))
+    
 class aloalo(nn.Module):
     def __init__(self,in_channel):
         super().__init__()
@@ -125,7 +201,7 @@ class Conv_func(nn.Module):
     def forward(self,x):
         return self.feature(x)
 
-class Residual_net(nn.Module):
+class Residual(nn.Module):
     def __init__(self,in_channel,out_channel,kernel=3):
         super().__init__()
         self.feature = nn.Sequential(
@@ -149,10 +225,7 @@ class down_sampling(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
         self.out =  nn.Sequential(
-            Residual_net(in_channel,out_channel,3),
-            ulaula(out_channel),
-            Residual_net(out_channel,out_channel,3)
-
+            Residual_net(in_channel,out_channel),
             )
         # self.down = Conv_func_1(out_channel,out_channel,kernel=2,padding=0,stride=2,activation=False)
         self.down = nn.Conv2d(out_channel,out_channel,kernel_size=2,stride=2,bias=False)
@@ -165,13 +238,34 @@ class Up_sampling(nn.Module):
         self.up = Unpooling_func(in_channel,in_channel,scale_factor=scale_factor)
 
         self.out =  nn.Sequential(
-            Residual_net(in_channel*2,out_channel,3),
-            ulaula(out_channel),
-            Residual_net(out_channel,out_channel,3)
+            Residual(in_channel*2,out_channel,3),
+            EFB(out_channel),
             )
+        self.compute_weigh=nn.Sequential(
+            nn.Conv1d(1,1,4,dilation=in_channel),
+            nn.Sigmoid()
+        )
+        self.change_dim=nn.Conv2d(in_channel,out_channel,1,bias=False)
+        self.gap=nn.AdaptiveAvgPool2d(1)
+        self.map=nn.AdaptiveMaxPool2d(1)
     def forward(self,x,x_encode):
+        b,c,h,w=x.shape
+        gap_x=self.gap(x)
+        # print(gap_x.shape)
+        gap_x_encode=self.gap(x_encode)
+        map_x=self.map(x)
+        map_x_encode=self.map(x_encode)
+        w=torch.cat((gap_x,map_x_encode,gap_x_encode,map_x),1).flatten(-3).unsqueeze(1)
+        # print(w.shape)
+        # return
+        weigh= self.compute_weigh(w)
+        weigh=weigh.view(b,-1,1,1)
+        # print(weigh.shape)
+        x=x+x*weigh
+        x_encode=x_encode+x_encode*weigh
         up = self.up(x)
-        return self.out(torch.cat((up,x_encode),1))
+        cat_x=self.out(torch.cat((up,x_encode),1))
+        return cat_x+self.change_dim(x_encode)
     
 class model_exchange_feature(nn.Module):
     def __init__(self,in_channel):
