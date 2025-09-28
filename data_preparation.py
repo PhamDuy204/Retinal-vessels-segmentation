@@ -46,12 +46,13 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
                     val_set
                 )
             else:
-                all_custom_train_patch_datasets.append(
-                    CustomTrainDataset(os.path.join(data_paths,name,'*'),train_transforms,with_patches=patches,
-                                         num_patches=num_patches,patch_size=patch_size,type_split=type_split)
-                )
-                all_custom_test_patch_datasets.append(
-                    CustomTestDataset(os.path.join(data_paths,name,'*'),test_transforms,type_split=type_split))
+                if name not in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']:
+                    all_custom_train_patch_datasets.append(
+                        CustomTrainDataset(os.path.join(data_paths,name,'*'),train_transforms,with_patches=patches,
+                                            num_patches=num_patches,patch_size=patch_size,type_split=type_split)
+                    )
+                    all_custom_test_patch_datasets.append(
+                        CustomTestDataset(os.path.join(data_paths,name,'*'),test_transforms,type_split=type_split))
                 
             train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)            
             val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)            

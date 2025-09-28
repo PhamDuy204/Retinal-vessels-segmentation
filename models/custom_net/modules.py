@@ -15,30 +15,30 @@ class MFSB(nn.Module):
         self.sc1=nn.Sequential(
             nn.Conv2d(in_channels,out_channels,3,padding='same',bias=False),
             nn.GroupNorm(out_channels,out_channels),
-            nn.LeakyReLU()
+            nn.ReLU()
         )
         self.sc2=nn.Sequential(
             nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False),
             nn.GroupNorm(in_channels,in_channels),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Conv2d(in_channels,out_channels,5,padding='same',bias=False),
             nn.GroupNorm(out_channels,out_channels),
-            nn.LeakyReLU()
+            nn.ReLU()
         )
         self.sc3=nn.Sequential(
             nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False),
             nn.GroupNorm(in_channels,in_channels),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Conv2d(in_channels,in_channels,5,padding='same',bias=False),
             nn.GroupNorm(in_channels,in_channels),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Conv2d(in_channels,out_channels,7,padding='same',bias=False),
             nn.GroupNorm(out_channels,out_channels),
-            nn.LeakyReLU()
+            nn.ReLU()
         )
         self.norm=nn.Sequential(
             nn.GroupNorm(out_channels,out_channels),
-            nn.LeakyReLU() if with_activation else nn.Identity()
+            nn.ReLU() if with_activation else nn.Identity()
         )
     def forward(self,x):
         sc1=self.sc1(x)
@@ -55,7 +55,7 @@ class EFB(nn.Module):
         self.conv=nn.Conv2d(in_channels,in_channels,3,padding='same',bias=False)
         self.ff=nn.Sequential(nn.Conv2d(in_channels,2*in_channels,1,bias=False),
                               nn.GroupNorm(1,2*in_channels),
-                              nn.GELU(),
+                              nn.ReLU(),
                               nn.Conv2d(2*in_channels,in_channels,1,bias=False))
         self.norm=nn.GroupNorm(1,in_channels)
     def forward(self,x):
@@ -65,7 +65,7 @@ class EFB(nn.Module):
         conv=self.conv(x)
         attn=F.sigmoid(dw_0)*dw_1
         out = self.norm(conv+attn)
-        return nn.GELU()(self.ff(out)+out)
+        return nn.ReLU()(self.ff(out)+out)
     
 class ChoiseSample(nn.Module):
     def __init__(self,in_channels,kernel_size,num_sample):
@@ -147,7 +147,7 @@ class Residual_net(nn.Module):
         ])
         self.conv=nn.Conv2d(in_channels,out_channels,1,bias=False)
         self.eh=EFB(out_channels)
-        self.activation=nn.GELU()
+        self.activation=nn.ReLU()
     def forward(self,x):
 
         shortcut=self.shortcut(x)

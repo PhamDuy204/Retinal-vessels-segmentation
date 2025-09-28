@@ -89,7 +89,7 @@ class CustomTrainDataset(Dataset):
             
                     patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
 
-                    filter_=patches_mask.sum((-1,-2))>=2
+                    filter_=patches_mask.sum((-1,-2))>=0
                     # print(filter.shape)
                     patches_image=patches_image.unsqueeze(1)[filter_]
                     # print(patches_image.shape)

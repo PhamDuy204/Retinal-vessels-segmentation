@@ -11,7 +11,7 @@ class FeedForward(nn.Module):
         super().__init__()
         self.network = nn.Sequential(
             nn.Linear(dimension, dimension * 4),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(dimension * 4,dimension),
         )
@@ -68,6 +68,7 @@ class CAB(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.pre_norm=nn.GroupNorm(1,in_channels)
+        self.norm_qk=nn.GroupNorm(in_channels,in_channels)
         self.q=nn.Conv2d(in_channels,in_channels,1,bias=False)
         self.k=nn.Conv2d(in_channels,in_channels,1,bias=False)
         self.v=nn.Conv2d(in_channels,in_channels,1,bias=False)
@@ -75,7 +76,7 @@ class CAB(nn.Module):
         self.ff=nn.Sequential(
             nn.GroupNorm(1,in_channels),
             nn.Conv2d(in_channels,in_channels,1,bias=False,groups=in_channels),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Conv2d(in_channels,in_channels,1,bias=False,groups=in_channels),
         )
     def forward(self, x):
@@ -84,7 +85,7 @@ class CAB(nn.Module):
         q=self.q(norm_x)
         k=self.k(norm_x)
         v=self.v(norm_x)
-        attn=F.sigmoid((q@k.transpose(-1,-2))/(h*w))
+        attn=F.sigmoid(self.norm_qk((q@k.transpose(-1,-2))/torch.sqrt(torch.tensor(h))))
         out=self.pj(v*attn)
         t_stage=self.ff(out+x)
         return t_stage+x
@@ -98,7 +99,7 @@ class BottleNeck(nn.Module):
         self.mamba2=Mamba2(dimension,d_state,conv_bias=False)
         self.merge=nn.Sequential(
             nn.Linear(2*dimension,dimension//2,bias=False),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Linear(dimension//2,dimension,bias=False),)
         # self.ff_0=SoftMoe(dimension,n_experts,slots_per_expert,dropout)
         # self.mha=MultiHeadAttention(dimension,n_heads,dropout)

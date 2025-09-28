@@ -65,7 +65,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
                 #     prob = prob[:,:,:h,:w]
                 if stride is not None:
                     prob = prob.view(B,-1,1,patch_size,patch_size)
-                    prob_1=torch.where(prob>0.49,1.,0.)
+                    prob_1=prob
 
                     prob=reverse_to_original_image(prob,(H,W),patch_size,stride)
                     prob_1=reverse_to_original_image(prob_1,(H,W),patch_size,stride)
@@ -81,7 +81,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             # print(mask.dtype)
             # print(prob.dtype)
 
-            pred_mask = torch.where(prob_1>=0.5,1,0)
+            pred_mask = torch.where(prob_1>=0.48,1,0)
 
             acc_metric.update(pred_mask, mask)
             f1_metric.update(pred_mask, mask)

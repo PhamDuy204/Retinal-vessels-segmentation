@@ -187,7 +187,7 @@ class Trainer:
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
                 save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
-                save_model_folder_path=f'./models/{args.model}'
+                save_model_folder_path=f'models/{args.model}/'
                 torch.save(best_model, save_path)
 
                 artifact = wandb.Artifact(name=f"{args.model}_{self.name}_pt", type="model")
