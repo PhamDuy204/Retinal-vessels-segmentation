@@ -9,9 +9,10 @@ from torch.utils.data import Dataset
 from utils import *
 from albumentations.pytorch import ToTensorV2
 import kornia.augmentation as K
-# from torchvision.transforms import functional as F
-# from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as F
+from torchvision.transforms import InterpolationMode
 # import torchvision
+
 import random
 
 # class RandomResizedCropBoth:
@@ -30,7 +31,7 @@ import random
 #             mask  = F.resized_crop(mask,  i, j, h, w, self.size, InterpolationMode.NEAREST)
 #             edge  = F.resized_crop(edge,  i, j, h, w, self.size, InterpolationMode.NEAREST)
 #         return image, mask,edge
-
+    
 class CustomTrainDataset(Dataset):
     def __init__(self,root_path,img_transforms=None,with_patches = False,num_patches=500,patch_size=64,type_split='random'):
         self.image_paths =  sorted(glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
@@ -71,6 +72,7 @@ class CustomTrainDataset(Dataset):
                 else:
                     # print(image.shape)
                     image=mirror_padding_v2(image)
+                    h,w=image.shape[-2:]
                     # print(image.shape)
                     # print(mask.shape)
                     if len(mask.shape)<3:mask=mask.unsqueeze(0)
@@ -107,9 +109,9 @@ class CustomTrainDataset(Dataset):
                 patches_edge=patches_edge[num_sample]
                 # patches_image,patches_mask=aug(patches_image.cuda(),patches_mask.cuda())
                 return {
-                    'image':patches_image[num_sample],
-                    'mask':patches_mask.long().squeeze()[num_sample],
-                    'edge':patches_edge[num_sample]
+                    'image':patches_image,
+                    'mask':patches_mask.squeeze(),
+                    'edge':patches_edge
                 }
 
         else:
@@ -157,4 +159,3 @@ class CustomTestDataset(Dataset):
             'mask':mask.squeeze(),
             'edge':edge,
         }
-
