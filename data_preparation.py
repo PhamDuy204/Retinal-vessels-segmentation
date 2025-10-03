@@ -46,11 +46,14 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
                     val_set
                 )
             else:
-                all_custom_train_patch_datasets.append(
-                    train_set
-                )
-                all_custom_test_patch_datasets.append(
-                    val_set)
+                if name not in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']:
+                    all_custom_train_patch_datasets.append(
+                        CustomTrainDataset(os.path.join(data_paths,name,'*'),train_transforms,with_patches=patches,
+                                            num_patches=num_patches,patch_size=patch_size,type_split=type_split)
+                    )
+                    all_custom_test_patch_datasets.append(
+                        CustomTestDataset(os.path.join(data_paths,name,'*'),test_transforms,type_split=type_split))
+                
             train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)            
             val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)            
             suffix = '_patches' if patches else ''
@@ -76,11 +79,11 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
                     'patches': False
                 })
     for i in range(len(all_custom_train_patch_datasets)):
-        # for j in range(len(all_custom_test_patch_datasets)):
-        #     if i == j: continue
-        train_set = ConcatDataset(all_custom_train_patch_datasets[0:i]+all_custom_train_patch_datasets[i+1:])
+        train_set = ConcatDataset(all_custom_train_patch_datasets[i+1:]+all_custom_train_patch_datasets[0:i])
         val_set = all_custom_test_patch_datasets[i]
         name = val_set.get_name()
+        if name in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']:
+            continue
         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)        
         val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)        
         all_train_methods.append({

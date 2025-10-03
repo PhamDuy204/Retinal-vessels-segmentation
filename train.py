@@ -187,12 +187,14 @@ class Trainer:
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
                 save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
+                save_model_folder_path=f'models/{args.model}/'
                 torch.save(best_model, save_path)
 
                 artifact = wandb.Artifact(name=f"{args.model}_{self.name}_pt", type="model")
                 artifact.add_file(save_path)
                 wandb.log_artifact(artifact)
                 wandb.save(save_path)
+                wandb.save(save_model_folder_path)
                 with torch.inference_mode():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
 
@@ -208,7 +210,7 @@ class Trainer:
 
                     stride=None
                     if self.patch and self.type_split!='random':
-                        num_patch=(64,64)
+                        num_patch=((H-args.patch_size)//16+1,(W-args.patch_size)//8+1)
                         ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
                         ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
                         stride=tmp_stride

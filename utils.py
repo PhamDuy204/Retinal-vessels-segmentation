@@ -26,21 +26,23 @@ def sobel_transform(image):
     sb = (sb_x+sb_y)/2
     return sb
 
-def apply_gamma_correction(orimage, gamma=1.4):
-    image=orimage.copy().astype(float)
-    image_normalized = (image / 255.0)
-    gamma_corrected = np.power(image_normalized, gamma)
-    gamma_corrected = np.uint8((gamma_corrected* 255).clip(0,255))
-    # gamma_corrected= np.uint8((1-gamma_corrected.astype(float)/ 255.0) * 255)
-    return gamma_corrected
-def preprocess_simple(path):
-    img = cv2.imread(path, 1)
-    g_channel = img[:, :, 1] # Green channel
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    enhanced_g = clahe.apply(g_channel)
-    # Normalize
-    normalized_img = (enhanced_g - np.mean(enhanced_g)) / np.std(enhanced_g)
-    return normalized_img
+def apply_gamma_correction(orimage, gamma=1.2):
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    return cv2.LUT(np.array(orimage.copy(), dtype = np.uint8), table)
+
+def preprocessing_img(path):
+    mean_=73.00342685729963
+    std_=54.45611922239714
+    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8,8))
+
+    img=np.array(Image.open(path).convert('RGB'))
+    gray=convert_gray(img)
+    gray=(gray-mean_)/std_
+    gray=((gray-np.min(gray))/(np.max(gray)-np.min(gray)))*255
+    
+    gray=clahe.apply(np.array(gray,dtype=np.uint8))
+    return unsharp_mask(apply_gamma_correction(gray,1.2))
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:

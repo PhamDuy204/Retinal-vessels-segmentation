@@ -16,7 +16,7 @@ class FeedForward(nn.Module):
         super().__init__()
         self.network = nn.Sequential(
             nn.Linear(dimension, dimension * 4),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(dimension * 4,dimension),
         )
@@ -83,7 +83,46 @@ class FeedForward(nn.Module):
 #         hidden_states = rearrange(torch.cat([x_ssm, z], dim=1), 'b d l -> b l d')
 #         return self.out_proj(hidden_states)
 
-
+class CAB(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.pre_norm=nn.GroupNorm(1,in_channels)
+        self.norm_qk=nn.GroupNorm(in_channels,in_channels)
+        self.q=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.k=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.v=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.pj=nn.Conv2d(in_channels,in_channels,1,bias=False)
+        self.ff=nn.Sequential(
+            nn.GroupNorm(1,in_channels),
+            nn.Conv2d(in_channels,in_channels,1,bias=False,groups=in_channels),
+            nn.ReLU(),
+            nn.Conv2d(in_channels,in_channels,1,bias=False,groups=in_channels),
+        )
+    def forward(self, x):
+        b,c,h,w=x.shape
+        norm_x=self.pre_norm(x)
+        q=self.q(norm_x)
+        k=self.k(norm_x)
+        v=self.v(norm_x)
+        attn=F.sigmoid(self.norm_qk((q@k.transpose(-1,-2))/torch.sqrt(torch.tensor(h))))
+        out=self.pj(v*attn)
+        t_stage=self.ff(out+x)
+        return t_stage+x
+class BottleNeck(nn.Module):
+    def __init__(self, dimension,n_heads=1,dropout=0.0,n_experts=4,slots_per_expert=2,d_state=16):
+        super().__init__()
+        self.pre_norm=nn.RMSNorm(dimension,0.00001)
+        self.rev_pre_norm=nn.RMSNorm(dimension,0.00001)
+        self.post_norm=nn.RMSNorm(dimension,0.00001)
+        self.mamba=Mamba2(dimension,d_state,conv_bias=False)
+        self.mamba2=Mamba2(dimension,d_state,conv_bias=False)
+        self.merge=nn.Sequential(
+            nn.Linear(2*dimension,dimension//2,bias=False),
+            nn.ReLU(),
+            nn.Linear(dimension//2,dimension,bias=False),)
+        # self.ff_0=SoftMoe(dimension,n_experts,slots_per_expert,dropout)
+        # self.mha=MultiHeadAttention(dimension,n_heads,dropout)
+        # self.ff_1=SoftMoe(dimension,n_experts,slots_per_expert,dropout)
 
 class TSB(nn.Module): 
     def __init__(self, in_channels, out_channels): 

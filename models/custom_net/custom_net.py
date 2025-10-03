@@ -2,7 +2,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
-from bottle_neck import CustomBottleNeck1
+from bottle_neck import BottleNeck,CAB
 # from bottle_neck_1 import CustomBottleNeck1
 # import sys
 # import torch.nn.functional as F
@@ -10,12 +10,13 @@ from bottle_neck import CustomBottleNeck1
 class SegModel(nn.Module):
     def __init__(self,in_channel,out_channel):
         super().__init__()
-        self.down_image = nn.Conv2d(in_channel,3,kernel_size=2,stride=2,bias=False) #b,3,256,256
+        # self.change_sample=ChoiseSample(in_channel,3,32)
+        self.down_image = nn.Conv2d(in_channel,32,2,2,bias=False) #b,3,256,256
         
         self.encode_0 = down_sampling(64,128) #b,8,256,256/b,8,128,128
         self.encode_1 = down_sampling(128,256) #b,16,128,128/b,16,64,64
 
-        # self.bottle_neck =nn.Sequential(CustomBottleNeck1(256,256), CustomBottleNeck1(256, 128))
+        self.bottle_neck =nn.Sequential(CAB(128),BottleNeck(128))
 
         self.bottle_neck = nn.Sequential(
             CustomBottleNeck1(128, 256)
@@ -42,6 +43,14 @@ class SegModel(nn.Module):
 
     def forward(self,x):
 
+        # dwt = DWTForward(J=1, wave='haar')  
+        # J = số level decomposition, wave = loại wavelet
+
+        # Thực hiện DWT
+        # Yl, Yh = dwt(x)
+        # frequency = torch.mean(Yh[0],2)
+
+        # x=self.change_sample(x)
         down_image = self.down_image(x) #b,3,256,256
         
         conv_0,down_0 = self.encode_0(down_image) #b,8,256,256/b,8,128,128

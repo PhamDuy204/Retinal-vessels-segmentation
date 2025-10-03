@@ -80,20 +80,32 @@ class CustomTrainDataset(Dataset):
                     # print(edge.shape)
                     # h_i,w_i=image.shape[-2:]
                     # condition=int(h_i>w_i)
-                    num_patch=(64,64)
+                    num_patch=((h-self.patch_size)//16+1,(w-self.patch_size)//8+1)
 
                     patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
                     patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
             
                     patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
 
-                    filter_=patches_mask.sum((-1,-2))>=5
+                    filter_=patches_mask.sum((-1,-2))>=0
                     # print(filter.shape)
                     patches_image=patches_image.unsqueeze(1)[filter_]
                     # print(patches_image.shape)
                     patches_mask=patches_mask[filter_]
                     patches_edge=patches_edge[filter_].unsqueeze(1)
-                num_sample =torch.randperm(len(patches_image))[:750]
+                # aug = K.AugmentationSequential(
+                #         K.RandomCrop((self.patch_size-self.patch_size//4, self.patch_size-self.patch_size//4), same_on_batch=True,p=0.5),
+                #         K.PadTo((self.patch_size, self.patch_size)),   # padding để khôi phục shape gốc
+                #         data_keys=["input", "mask"]
+                #     ).cuda()
+                num_sample =torch.randperm(len(patches_image))[:2000]
+                patches_image=patches_image[num_sample]
+                patches_mask=patches_mask.long()[num_sample]
+                
+                if len(patches_mask.shape)<4:
+                    patches_mask=patches_mask.unsqueeze(1)
+                patches_edge=patches_edge[num_sample]
+                # patches_image,patches_mask=aug(patches_image.cuda(),patches_mask.cuda())
                 return {
                     'image':patches_image[num_sample],
                     'mask':patches_mask.long().squeeze()[num_sample],
