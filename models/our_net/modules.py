@@ -6,108 +6,234 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from bottle_neck import *
 
-class conv_func(nn.Module):
-    def __init__(self,in_channels, out_channels,kernel_size,stride=1,padding:str|int=0,dilation=1,with_activation=True):
+class GRN(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.out= nn.Sequential(
-            nn.Conv2d(in_channels,out_channels,kernel_size,stride,padding,dilation,bias=False,padding_mode='zeros'),
-            nn.GroupNorm(out_channels,out_channels),
-            nn.ReLU() if with_activation else nn.Identity(),
-            )
+        self.gamma=nn.Parameter(torch.tensor(1.))
     def forward(self,x):
-        return self.out(x)
+        x=x.permute(0,2,3,1).contiguous()
+        gx = torch.norm(x, p=2, dim=(1,2), keepdim=True)
+        nx = gx / (gx.mean(dim=-1, keepdim=True)+1e-6)
+        return (self.gamma * (x * nx) + x).permute(0,3,1,2).contiguous()
     
-class residual(nn.Module):
-    def __init__(self,in_channels, out_channels,kernel_size,stride=1,padding:str|int=0,dilation=1) -> None:
+
+class ConvFunc(nn.Module):
+    def __init__(self, in_channels,kernel_size=3,stride=1,padding:int|str='same',dilation=1,in_size=(64,64)):
         super().__init__()
-        self.id_=nn.Conv2d(in_channels,out_channels,1,bias=False)
-        self.attn=nn.Sequential(
+        self.out=nn.Sequential(
+            nn.Conv2d(in_channels,in_channels,kernel_size,stride,padding,dilation,bias=False),
+            nn.LayerNorm([in_channels,in_size[0],in_size[1]],bias=False),
+            nn.Conv2d(in_channels,in_channels*4,1,bias=False),
+            nn.LeakyReLU(0.001),
+            GRN(),
+            nn.Conv2d(in_channels*4,in_channels,1,bias=False),
+        )
+    def forward(self,x):
+        return x+self.out(x)
+    
+class MKIR(nn.Module):
+    def __init__(self, in_channels,out_channels,in_size=(64,64)):
+        super().__init__()
+        self.first_conv=nn.Sequential(
+            nn.Conv2d(in_channels,out_channels,1,bias=False),
+            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+            nn.LeakyReLU(0.001),
+        )
+        self.b1=nn.Sequential(
+            ConvFunc(out_channels,kernel_size=3,padding='same',in_size=in_size),
+            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+            nn.LeakyReLU(0.001))
+        self.b2=nn.Sequential(ConvFunc(out_channels,kernel_size=3,padding='same',in_size=in_size),
+                            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+                            nn.LeakyReLU(0.001),
+                            ConvFunc(out_channels,kernel_size=5,padding='same',in_size=in_size),
+                            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+                            nn.LeakyReLU(0.001),)
+        self.b3=nn.Sequential(ConvFunc(out_channels,kernel_size=3,padding='same',in_size=in_size),
+                            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+                            nn.LeakyReLU(0.001),
+                            ConvFunc(out_channels,kernel_size=5,padding='same',in_size=in_size),
+                            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+                            nn.LeakyReLU(0.001),
+                            ConvFunc(out_channels,kernel_size=7,padding='same',in_size=in_size),
+                            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+                            nn.LeakyReLU(0.001),)
+        self.conv_1=nn.Sequential(nn.Conv2d(out_channels,out_channels*4,1,bias=False),
+                                  nn.LayerNorm([out_channels*4,in_size[0],in_size[1]],bias=False),
+                                    nn.Conv2d(out_channels*4,out_channels,1,bias=False),)
+    def forward(self,x):
+        x=self.first_conv(x)
+        b1=self.b1(x)
+        b2=self.b2(x)
+        b3=self.b3(x)
+        merge = self.conv_1(b1+b2+b3)
+        return merge+x
+        
+
+class CA(nn.Module):
+    def __init__(self, channels, reduction_rate=4):
+        super().__init__()
+        self.squeeze = nn.ModuleList([
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(in_channels,max(in_channels//2,1),1,bias=False),
-            nn.ReLU(),
-            nn.Conv2d(max(in_channels//2,1),out_channels,1,bias=False),
+            nn.AdaptiveMaxPool2d(1)
+        ])
+        self.excitation = nn.Sequential(
+            nn.Conv2d(in_channels=channels,
+                      out_channels=max(channels // reduction_rate,1),
+                      kernel_size=1,bias=False),
+            nn.LeakyReLU(0.001),
+            nn.Conv2d(in_channels=max(channels // reduction_rate,1),
+                      out_channels=channels,
+                      kernel_size=1,bias=False)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_feat = self.squeeze[0](x)
+        max_feat = self.squeeze[1](x)
+        avg_out = self.excitation(avg_feat)
+        max_out = self.excitation(max_feat)
+        attention = self.sigmoid(avg_out + max_out)
+        return attention * x
+    
+class SA(nn.Module):
+    def __init__(self, kernel_size=5):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=2,
+            out_channels=1,
+            kernel_size=kernel_size,
+            padding='same',
+            bias=False
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # mean on spatial dim
+        avg_feat    = torch.mean(x, dim=1, keepdim=True)
+        # max on spatial dim
+        max_feat, _ = torch.max(x, dim=1, keepdim=True)
+        feat = torch.cat([avg_feat, max_feat], dim=1)
+        out_feat = self.conv(feat)
+        attention = self.sigmoid(out_feat)
+        return attention * x
+
+
+class AG(nn.Module):
+    def __init__(self,in_channel,in_size=(64,64)):
+        super().__init__()
+        self.gconv_x_u = nn.Sequential(
+            nn.Conv2d(in_channel,in_channel,3,groups=in_channel,padding='same',bias=False),
+            nn.LayerNorm([in_channel,in_size[0],in_size[1]],bias=False),)
+        self.gconv_x_e = nn.Sequential(nn.Conv2d(in_channel,in_channel,3,groups=in_channel,padding='same',bias=False),
+                                        nn.LayerNorm([in_channel,in_size[0],in_size[1]],bias=False),)
+        self.out =  nn.Sequential(
+            nn.LeakyReLU(0.001),
+            nn.Conv2d(in_channel,in_channel,1,bias=False),
+            nn.LayerNorm([in_channel,in_size[0],in_size[1]],bias=False),
+            )
+        self.compute_weigh=nn.Sequential(
+            nn.Conv1d(1,1,6,dilation=in_channel,bias=False),
+            nn.LeakyReLU(0.001),
+        )
+        self.compute_weigh_1=nn.Sequential(
+            nn.Conv2d(in_channel,4*in_channel,1,bias=False),
+            nn.GroupNorm(1,4*in_channel),
+            nn.Conv2d(4*in_channel,in_channel,1,bias=False),
             nn.Sigmoid()
         )
-        self.convs= nn.Sequential(
-            conv_func(in_channels,out_channels,kernel_size,stride,padding,dilation,with_activation=False),
-            conv_func(out_channels,out_channels,kernel_size,stride,padding,dilation)
-            )
+        self.change_dim=nn.Sequential(
+            nn.LayerNorm([1,in_size[0],in_size[1]],bias=False),
+            nn.Sigmoid())
+        self.gap=nn.AdaptiveAvgPool2d(1)
+        self.map=nn.AdaptiveMaxPool2d(1)
+    def forward(self,x_e,x_u):
+        '''
+        x_e : in_channel,h,w
+        x_u: in_channel,h,w
+        '''
+        b,c,h,w=x_e.shape
+        gconv_x_u=self.gconv_x_u(x_u)
+        gconv_x_e=self.gconv_x_e(x_e)
+        merge= self.out(gconv_x_u+gconv_x_e)
+        gap_x_m=self.gap(merge)
+        # print(gap_x.shape)
+        map_m=self.map(merge)
+
+        gap_x_e=self.gap(x_e)
+        # print(gap_x.shape)
+        gap_x_u=self.gap(x_u)
+        map_e=self.map(x_e)
+        map_x_u=self.map(x_u)
+        w=torch.cat((gap_x_e,map_e,gap_x_u,map_x_u,gap_x_m,map_m),1).flatten(-3).unsqueeze(1)
+        # print(w.shape)
+        # return
+        weigh= self.compute_weigh(w)
+        weigh=self.compute_weigh_1(weigh.view(b,-1,1,1))
+        # print(weigh.shape)
+        merge=torch.sum(merge*weigh,1,keepdim=True)
+
+        return x_e*self.change_dim(merge)
+class MAB(nn.Module):
+    def __init__(self,in_channel):
+        super().__init__()
+        self.b1=nn.Sequential(
+            CA(in_channel),
+            SA(),
+            nn.Conv2d(in_channel,in_channel,1,bias=False),
+            nn.Sigmoid())
+        self.b2=nn.Sequential(
+            CA(in_channel),
+            SA(),
+            nn.Conv2d(in_channel,in_channel,1,bias=False),
+            nn.Sigmoid())
     def forward(self,x):
-        id_=self.id_(x)
-        attn=self.attn(x)
-        return (self.convs(x)+id_)*attn
+        b1=x*self.b1(x)
+        t_x=x.transpose(-2,-1).contiguous()
+        b2=t_x*self.b2(t_x)
+        return b1+b2
+    
 
 class down_sampling(nn.Module):
-    def __init__(self,in_channels, out_channels):
+    def __init__(self,in_channels,out_channels,in_size):
         super().__init__()
-        self.res=nn.Sequential(
-            conv_func(in_channels,out_channels,3,padding='same',with_activation=False),
-            residual(out_channels, out_channels,3,padding='same'),)
-        self.pool=nn.MaxPool2d(2)
+        self.mkir=MKIR(in_channels,out_channels,in_size)
+        self.down=nn.MaxPool2d(2)
     def forward(self,x):
-        res = self.res(x)
-        return res,self.pool(res)
-    
-class MSB(nn.Module):
-    def __init__(self,in_channels):
+        mkir=self.mkir(x)
+        return mkir,self.down(mkir)
+class UpFunc(nn.Module):
+    def __init__(self, in_channels,out_channels,scale_factor=2):
         super().__init__()
-        self.b_0=conv_func(in_channels,in_channels,1,padding='same',with_activation=False)
-        self.b_1=conv_func(in_channels,in_channels,3,padding='same',with_activation=False)
-        self.b_2=conv_func(in_channels,in_channels,5,padding='same',with_activation=False)
-
-        self.b_3=conv_func(in_channels,in_channels,3,dilation=2,padding='same',with_activation=False)
-        self.b_4=conv_func(in_channels,in_channels,3,dilation=5,padding='same',with_activation=False)
-        self.b_5=conv_func(in_channels,in_channels,3,dilation=7,padding='same',with_activation=False)
-        self.merge=nn.Sequential(
-            nn.Conv2d(7*in_channels,in_channels,1,bias=False),
-        )
+        self.up=nn.UpsamplingBilinear2d(scale_factor=scale_factor)
+        self.conv_1=nn.Conv2d(in_channels,out_channels,1,bias=False)
     def forward(self,x):
-        b_0=self.b_0(x)
-        b_1=self.b_1(x)
-        b_2=self.b_2(x)
-        b_3=self.b_3(x)
-        b_4=self.b_4(x)
-        b_5=self.b_5(x)
-        res = self.merge(torch.cat((x,b_0,b_1,b_2,b_3,b_4,b_5),1))
-        return res
+        return  self.conv_1(self.up(x))
+       
 class up_sampling(nn.Module):
-    def __init__(self,in_channels, out_channels):
+    def __init__(self,in_channels,in_channels_t,out_channels,in_size):
         super().__init__()
-        self.msbs=nn.Sequential(
-            MSB(out_channels)
+        self.ag=AG(out_channels,in_size)
+        self.up_t=UpFunc(in_channels_t,out_channels,2)
+        self.up=UpFunc(in_channels,out_channels,2)
+        self.down=nn.MaxPool2d(2)
+        self.mab=MAB(out_channels)
+        self.merge=nn.Sequential(
+            nn.Conv2d(2*out_channels,out_channels,3,padding='same',bias=False),
+            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+            nn.LeakyReLU(0.001),
+            nn.Conv2d(out_channels,out_channels,3,padding='same',bias=False),
+            nn.LayerNorm([out_channels,in_size[0],in_size[1]],bias=False),
+            nn.LeakyReLU(0.001),
         )
-            # BottleNeck(out_channels),
-            # residual(out_channels,out_channels,3,padding='same'),)
-        self.horizontal_conv=nn.Conv2d(out_channels,out_channels,(1,3),padding='same',bias=False)
-        self.vertical_conv=nn.Conv2d(out_channels,out_channels,(3,1),padding='same',bias=False)
-        self.affine_shape = nn.Conv2d(in_channels,out_channels,1,bias=False)
-        self.up_conv=nn.ConvTranspose2d(out_channels,out_channels,2,2,bias=False)
-        self.affine=nn.Sequential(
-            nn.Conv2d(out_channels,out_channels,3,padding='same',bias=False,groups=out_channels),
-            nn.Conv2d(out_channels,out_channels,1,bias=False))
-        # self.msb=MSB(out_channels)
-        self.res =nn.Sequential(
-            nn.Conv2d(2*out_channels,2*out_channels,3,padding='same',bias=False,groups=2*out_channels),
-            nn.Conv2d(2*out_channels,out_channels,1,bias=False))
-        self.GAP=nn.AdaptiveAvgPool2d(1)
-        self.attn=nn.Sequential(
-            nn.Conv2d(2*out_channels,out_channels,1,bias=False),
-            nn.GELU(),
-            nn.Conv2d(out_channels,out_channels,1,bias=False),
-            nn.Sigmoid()
-        )
-        # self.up_sample=nn.Upsample(scale_factor=2,align_corners=True,mode='bilinear')
-    def forward(self,predown,down,cur):
+    def forward(self,x_u,x_e,x_u_t):
         '''
-        predown: out_channels,h,w
-        down: out_channels,h/2,w/2
-        cur: in_channels,h/2,w/2
+        x_u : inc,h/2,w/2
+        x_u_t : inc_t,h/2,w/2
+        x_e : out,h,w
         '''
-        cur=self.horizontal_conv(self.affine_shape(cur))
-        down=self.vertical_conv(down)
-        high_f=self.up_conv(self.msbs(cur+down))
-        low_f=self.affine(predown)
-        cat_f=torch.cat((high_f,low_f),1)
-        attn=self.attn(self.GAP(cat_f))*low_f+low_f
-        return  self.res(torch.cat((attn,high_f),1))
-
+        x_u_t=self.up_t(x_u_t)
+        x_u_t=self.ag(x_e,x_u_t) # out,h,w
+        x_u=self.up(x_u)
+        mab=self.mab(x_u)
+        return self.merge(torch.cat((mab,x_u_t),1)),x_u_t
