@@ -249,6 +249,10 @@ class Up_sampling(nn.Module):
         self.gap=nn.AdaptiveAvgPool2d(1)
         self.map=nn.AdaptiveMaxPool2d(1)
     def forward(self,x,x_encode):
+        '''
+        x : in_channel,h/2,w/2
+        x_encode: in_channel,h,w
+        '''
         b,c,h,w=x.shape
         gap_x=self.gap(x)
         # print(gap_x.shape)
@@ -267,25 +271,25 @@ class Up_sampling(nn.Module):
         cat_x=self.out(torch.cat((up,x_encode),1))
         return cat_x+self.change_dim(x_encode)
     
-class model_exchange_feature(nn.Module):
-    def __init__(self,in_channel):
-        super().__init__()
-        self.rs1 = Residual_net(in_channel,in_channel,3)
-        self.rs2 = Residual_net(in_channel,in_channel,3)
+# class model_exchange_feature(nn.Module):
+#     def __init__(self,in_channel):
+#         super().__init__()
+#         self.rs1 = Residual_net(in_channel,in_channel,3)
+#         self.rs2 = Residual_net(in_channel,in_channel,3)
 
-    def forward(self,x1,x2):
-        x1_1,x1_2 = x1.chunk(2,1)
-        x2_1,x2_2 = x2.chunk(2,1)
-        new_x1 = torch.cat((x1_1,x2_2),1)
-        new_x2 = torch.cat((x1_2,x2_1),1)
-        return self.rs1(new_x1),self.rs2(new_x2)
+#     def forward(self,x1,x2):
+#         x1_1,x1_2 = x1.chunk(2,1)
+#         x2_1,x2_2 = x2.chunk(2,1)
+#         new_x1 = torch.cat((x1_1,x2_2),1)
+#         new_x2 = torch.cat((x1_2,x2_1),1)
+#         return self.rs1(new_x1),self.rs2(new_x2)
 
-class kame_func(nn.Module):
-    def __init__(self,in_channel,out_channel):
-        super().__init__()
-        self.conv_tran = nn.ConvTranspose2d(in_channel,out_channel,2,2,bias=False)
-        self.change = nn.Conv2d(out_channel*2,out_channel,1,bias=False)
+# class kame_func(nn.Module):
+#     def __init__(self,in_channel,out_channel):
+#         super().__init__()
+#         self.conv_tran = nn.ConvTranspose2d(in_channel,out_channel,2,2,bias=False)
+#         self.change = nn.Conv2d(out_channel*2,out_channel,1,bias=False)
 
-    def forward(self,low_size,high_size):
-        return self.change(torch.cat((self.conv_tran(low_size),high_size),1))
+#     def forward(self,low_size,high_size):
+#         return self.change(torch.cat((self.conv_tran(low_size),high_size),1))
 

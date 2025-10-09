@@ -101,9 +101,7 @@ class BottleNeck(nn.Module):
             nn.Linear(2*dimension,dimension//2,bias=False),
             nn.ReLU(),
             nn.Linear(dimension//2,dimension,bias=False),)
-        # self.ff_0=SoftMoe(dimension,n_experts,slots_per_expert,dropout)
-        # self.mha=MultiHeadAttention(dimension,n_heads,dropout)
-        # self.ff_1=SoftMoe(dimension,n_experts,slots_per_expert,dropout)
+
 
     def forward(self, x: torch.Tensor):
         b,c,h, w = x.shape
@@ -112,7 +110,4 @@ class BottleNeck(nn.Module):
         forward_states=self.mamba(self.pre_norm(x))+x
         backward_states = self.mamba2(self.rev_pre_norm(rev_x))+rev_x
         mamba=self.merge(torch.cat((forward_states,backward_states),-1))
-        # first_stage=(self.ff_0(self.post_norm(mamba))+mamba).view(b,h,w,c).permute(0,3,1,2).contiguous()
-        # second_stage=self.mha(first_stage)
-        # second_stage=second_stage.permute(0,2,3,1).contiguous().flatten(1,2)
         return mamba.view(b,h,w,c).permute(0,3,1,2).contiguous()
