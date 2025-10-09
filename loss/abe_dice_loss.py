@@ -32,14 +32,6 @@ class AbeDiceLoss(nn.Module):
         target : b,c,h,w
         '''
         b = truth.shape[0]
-<<<<<<< HEAD
-        pred = pred.squeeze().float()
-        truth = truth.squeeze().float()
-        focal_loss = torch.mean(-((1-pred)**2)*truth*torch.log(pred+1e-6)-(pred**2)*(1-truth)*torch.log((1-pred)+1e-6))
-        diceloss = 1-(torch.sum(2*pred*truth)/torch.sum(pred +truth))
-
-        return 5*MultiScopeLoss()(pred,truth)+10*focal_loss+nn.BCELoss()(pred,truth)+nn.L1Loss()(pred.flatten(),truth.flatten())+diceloss
-=======
         pred = pred.squeeze(1).float()
         truth = truth.squeeze(1).float()
         # loss=torch.zeros(1).to(pred.device)
@@ -60,4 +52,3 @@ class AbeDiceLoss(nn.Module):
         all_loss= diceloss+focal_loss+mse_loss+bce_loss+js_loss
         # print(all_loss)
         return all_loss
->>>>>>> origin/main
