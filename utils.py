@@ -8,7 +8,28 @@ from PIL import Image
 import kornia
 from scipy.signal import wiener
 import pywt
+import torch.nn as nn
 
+import torch.nn as nn
+
+def init_weights_kaiming(m):
+    if isinstance(m, (nn.Conv2d, nn.Linear)):
+        nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+        if m.weight is not None:
+            nn.init.constant_(m.weight, 1)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+
+def init_weights_xavier(m):
+    if isinstance(m, (nn.Conv2d, nn.Linear)):
+        nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+
+    
 def convert_gray(image,weigh=np.array([0.299, 0.587, 0.114])):
     image=image.astype(np.float64)
     gray_img = image*weigh

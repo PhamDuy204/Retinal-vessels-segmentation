@@ -18,11 +18,11 @@ import wandb
 import math
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
-parser.add_argument("-b", "--batch_size",type=int, default=1)
-parser.add_argument("-e", "--epochs",type=int, default=50)
+parser.add_argument("-b", "--batch_size",type=int, default=4)
+parser.add_argument("-e", "--epochs",type=int, default=100)
 parser.add_argument("-lf", "--loss",type=str, default='abe_dice_loss')
 parser.add_argument("-m", "--model",type=str, default='unet')
-parser.add_argument("-lr", "--learning_rate",type=float, default=5e-4)
+parser.add_argument("-lr", "--learning_rate",type=float, default=0.001)
 parser.add_argument("-p", "--patches",type=int, default=500)
 parser.add_argument("-ps", "--patch_size",type=int, default=64)
 parser.add_argument("-tt", "--train_type",type=str, default='patch')
@@ -81,11 +81,11 @@ class Trainer:
             for sample in tqdm(self.train_loader):
                 image,mask,edge=sample.values()
 
-                random_index =  torch.randperm(image.size(0))
+                # random_index =  torch.randperm(image.size(0))
 
-                image=image[random_index]
-                edge=edge[random_index]
-                mask=mask[random_index]
+                # image=image[random_index]
+                # edge=edge[random_index]
+                # mask=mask[random_index]
                 # print(image.shape)
                 # print(mask.shape)
                 # print(edge.shape)
@@ -93,6 +93,11 @@ class Trainer:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
                     edge=edge.flatten(0,1)
+                
+                random_index = torch.randperm(image.size(0))
+                image=image[random_index]
+                edge=edge[random_index]
+                mask=mask[random_index]
                 # print(image.shape)
                 if args.chunk_size is None:
 
@@ -187,11 +192,13 @@ class Trainer:
                 best_model.eval()
                 os.makedirs(self.save_dir, exist_ok=True)
                 save_path = os.path.join(self.save_dir, f"{args.model}_on_{self.name}_best.pt")
-                save_model_folder_path=f'models/{args.model}/'
+                save_model_folder_path=os.path.join(os.path.dirname(__file__),f'models/{args.model}/')
                 torch.save(best_model, save_path)
 
                 artifact = wandb.Artifact(name=f"{args.model}_{self.name}_pt", type="model")
                 artifact.add_file(save_path)
+                artifact.add_file(os.path.join(os.path.dirname(__file__),f'loss/{args.loss}.py'))
+                artifact.add_dir(save_model_folder_path)
                 wandb.log_artifact(artifact)
                 wandb.save(save_path)
                 wandb.save(save_model_folder_path)
@@ -210,7 +217,7 @@ class Trainer:
 
                     stride=None
                     if self.patch and self.type_split!='random':
-                        num_patch=((H-args.patch_size)//16+1,(W-args.patch_size)//8+1)
+                        num_patch=((H-args.patch_size)//32+1,(W-args.patch_size)//8+1)
                         ex_image,tmp_stride = extract_patches_with_target_count(ex_image,args.patch_size,num_patch)
                         ex_edge,_ = extract_patches_with_target_count(ex_edge,args.patch_size,num_patch)
                         stride=tmp_stride
@@ -268,7 +275,7 @@ class Trainer:
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
-                    ex_pred_mask=torch.where(ex_pred_mask>0.5,1,0)
+                    ex_pred_mask=torch.where(ex_pred_mask>=0.485,1,0)
                     # print(ex_pred_mask.shape)
                     # print(ex_image.shape)
                     for i in range(len(ex_image)):
@@ -332,9 +339,15 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         patch = info['patches']
         seg_model=load_model_class(args.model)
         model = seg_model(1,1).cuda()
-        if patch:
-            _=model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
-        model.zero_grad()
+        model.apply(init_weights_kaiming)
+        try:
+            for m in [model.awl, model.up_f_0[-1], model.up_f_1[-1]]:
+                m.apply(init_weights_xavier)
+        except:
+            pass
+        # if patch:
+        #     _=model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
+        # model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
         timestamp = datetime.now().strftime('%Y%m%d_%H')
@@ -346,6 +359,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                     config={
                         "dataset": name,
                         "model": model_class_name,
+                        "batch_size": args.batch_size,
                         "num_patch": None if ~patch else args.patch_size,
                         'type_split': None if ~patch else args.type_split,
                         "optimizer": "Adam",

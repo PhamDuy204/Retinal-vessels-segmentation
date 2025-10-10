@@ -26,7 +26,7 @@ def get_test_transforms():
 
 def get_train_patch_transforms():
     return A.Compose([
-        A.Rotate(limit=10, p=0.7),
+        A.Rotate(limit=45, p=0.7),
         A.HorizontalFlip(p=0.7),
         A.VerticalFlip(p=0.7),
         
