@@ -1,14 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-<<<<<<< HEAD
-=======
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from bottle_neck import *
 from typing import Optional
->>>>>>> origin/main
 
 
 def _same_padding(kernel_size, dilation=1):
