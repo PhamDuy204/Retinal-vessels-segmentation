@@ -82,7 +82,11 @@ class CustomTrainDataset(Dataset):
                     # print(edge.shape)
                     # h_i,w_i=image.shape[-2:]
                     # condition=int(h_i>w_i)
-                    num_patch=((h-self.patch_size)//16+1,(w-self.patch_size)//8+1)
+                    items = [8, 16, 32]
+                    # idx = torch.randint(0, 3, (1,)).item()
+                    choice_h = items[torch.randint(0, 3, (1,)).item()]
+                    choice_w = items[torch.randint(0, 3, (1,)).item()]
+                    num_patch=((h-self.patch_size)//choice_h+1,(w-self.patch_size)//choice_w+1)
 
                     patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
                     patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
@@ -100,7 +104,12 @@ class CustomTrainDataset(Dataset):
                 #         K.PadTo((self.patch_size, self.patch_size)),   # padding để khôi phục shape gốc
                 #         data_keys=["input", "mask"]
                 #     ).cuda()
-                num_sample =torch.randperm(len(patches_image))[:2000]
+                n = len(patches_image)
+                if n >= 750:
+                    num_sample = torch.randperm(n)[:750]
+                else:
+                    extra = torch.randint(0, n, (750 - n,))
+                    num_sample = torch.cat([torch.arange(n), extra])
                 patches_image=patches_image[num_sample]
                 patches_mask=patches_mask.long()[num_sample]
                 

@@ -37,6 +37,7 @@ class SoftMoe(nn.Module):
         y = torch.bmm(combine_weights, ys)
         return y
 
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, dimension,n_heads=1,dropout=0.0):
         super().__init__()
@@ -54,6 +55,7 @@ class MultiHeadAttention(nn.Module):
         self.out_norm=nn.LayerNorm(self.head_dimension,bias=False)
         self.dropout = nn.Dropout(dropout)
         self.dropout_ratio=dropout
+
     def forward(self, x: torch.Tensor):
         b,c,h, w = x.shape
         Q = self.q_norm(self.q_projection(x).permute(0,2,3,1).contiguous().flatten(1,2).view(b, h*w, self.n_heads, self.head_dimension).transpose(1, 2))
@@ -63,6 +65,7 @@ class MultiHeadAttention(nn.Module):
         concat = heads.transpose(1, 2).contiguous().view(b, h*w, c)
         linear = self.linear(concat)
         return self.out_norm((self.dropout(linear)+concat)).view(b,h,w,c).permute(0,3,1,2).contiguous()
+
 
 class CAB(nn.Module):
     def __init__(self, in_channels):
@@ -79,16 +82,21 @@ class CAB(nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels,in_channels,1,bias=False,groups=in_channels),
         )
+
     def forward(self, x):
         b,c,h,w=x.shape
         norm_x=self.pre_norm(x)
         q=self.q(norm_x)
         k=self.k(norm_x)
         v=self.v(norm_x)
-        attn=F.sigmoid(self.norm_qk((q@k.transpose(-1,-2))/torch.sqrt(torch.tensor(h))))
+        attn = F.sigmoid(self.norm_qk((q @ k.transpose(-1, -2)) / math.sqrt(q.size(-1))))
+
+
         out=self.pj(v*attn)
         t_stage=self.ff(out+x)
         return t_stage+x
+    
+
 class BottleNeck(nn.Module):
     def __init__(self, dimension,n_heads=1,dropout=0.0,n_experts=4,slots_per_expert=2,d_state=16):
         super().__init__()
@@ -101,7 +109,6 @@ class BottleNeck(nn.Module):
             nn.Linear(2*dimension,dimension//2,bias=False),
             nn.ReLU(),
             nn.Linear(dimension//2,dimension,bias=False),)
-
 
     def forward(self, x: torch.Tensor):
         b,c,h, w = x.shape

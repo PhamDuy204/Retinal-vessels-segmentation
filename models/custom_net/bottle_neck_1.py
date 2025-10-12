@@ -140,9 +140,9 @@ class Depthwise(nn.Module):
 class VGG(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(VGG, self).__init__() 
-        self.conv1 = Depthwise(in_channels=in_channels, out_channels=in_channels, kernel_size=3)
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3)
         self.gelu1 = nn.GELU()
-        self.conv2 = Depthwise(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
         self.gelu2 = nn.GELU() 
 
     def forward(self, X): 
@@ -156,9 +156,9 @@ class VGG(nn.Module):
 class ResNet(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(ResNet, self).__init__() 
-        self.conv1 = Depthwise(in_channels=in_channels, out_channels=in_channels, kernel_size=3) 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3) 
         self.gelu1 = nn.GELU()
-        self.conv2 = Depthwise(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
         self.gelu2 = nn.GELU() 
 
         # projection layer nếu số kênh thay đổi
