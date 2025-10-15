@@ -35,11 +35,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             stride=None
             if patch and type_split!='random':
                 # condition=int(H>W)
-<<<<<<< HEAD
-                num_patch=(64,64)
-=======
                 num_patch=((H-patch_size)//32+1,(W-patch_size)//8+1)
->>>>>>> origin/main
                 image,tmp_stride = extract_patches_with_target_count(image,patch_size,num_patch)
                 edge,_ = extract_patches_with_target_count(edge,patch_size,num_patch)
                 stride=tmp_stride
@@ -74,13 +70,10 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
                     prob_1=prob
 
                     prob=reverse_to_original_image(prob,(H,W),patch_size,stride)
-<<<<<<< HEAD
-=======
                     prob_1=reverse_to_original_image(prob_1,(H,W),patch_size,stride)
             # torch.cuda.empty_cache()        
             # prob_2 =model(image)
 
->>>>>>> origin/main
             h, w = mask.shape[-2:]
 
             # prob_2=prob_2[:,:,:h,:w]
