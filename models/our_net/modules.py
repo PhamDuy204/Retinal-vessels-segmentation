@@ -262,7 +262,7 @@ class UpFunc(nn.Module):
         cat_u = torch.cat((2*up_s,up_c),1)
         cat_u = self.grnorm(cat_u)
 
-        return self.gelu(self.conv_1(cat_u)) + x 
+        return self.gelu(self.conv_1(cat_u))
         
 
        

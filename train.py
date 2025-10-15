@@ -16,6 +16,8 @@ from torch.multiprocessing import Process, Queue
 from load_model import load_model_class,load_loss_class
 import wandb
 import math
+import traceback # <<< THÊM DÒNG NÀY
+
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=4)
@@ -81,14 +83,6 @@ class Trainer:
             for sample in tqdm(self.train_loader):
                 image,mask,edge=sample.values()
 
-                # random_index =  torch.randperm(image.size(0))
-
-                # image=image[random_index]
-                # edge=edge[random_index]
-                # mask=mask[random_index]
-                # print(image.shape)
-                # print(mask.shape)
-                # print(edge.shape)
                 if len(image.shape)>4:
                     image=image.flatten(0,1)
                     mask=mask.flatten(0,1)
@@ -98,9 +92,8 @@ class Trainer:
                 image=image[random_index]
                 edge=edge[random_index]
                 mask=mask[random_index]
-                # print(image.shape)
-                if args.chunk_size is None:
 
+                if args.chunk_size is None:
                     chunk_size=max(min(math.ceil(image.shape[0]/args.batch_size),16*args.batch_size),1)
                 else:
                     chunk_size = args.chunk_size
@@ -113,19 +106,6 @@ class Trainer:
                     n_image = n_image.cuda()
                     n_mask = n_mask.cuda()
                     n_egde = n_egde.cuda()
-
-                    # c_mask_0,c_mask_1=n_mask.chunk(2,dim=0)
-                    # c_image_0,c_image_1=n_image.chunk(2,dim=0)
-                    # c_edge_0,c_edge_1=n_egde.chunk(2,dim=0)
-
-                    # b_mask=(c_mask_0+c_mask_1)
-                    # b_mask=torch.where(b_mask==2,1,b_mask)
-                    # b_image=(c_image_0 + c_image_1)/2
-                    # b_edge=(c_edge_0 + c_edge_1)/2
-
-                    # n_image=torch.cat((n_image,b_image),0)
-                    # n_mask=torch.cat((n_mask,b_mask),0)
-                    # n_egde=torch.cat((n_egde,b_edge),0)
 
                     if check_model_forward_args(self.model)==2:
                         pred_mask = self.model(n_image,n_egde)
@@ -213,8 +193,6 @@ class Trainer:
                     ex_mask=ex_mask.cuda()
                     ex_edge=ex_edge.cuda()
 
-
-
                     stride=None
                     if self.patch and self.type_split!='random':
                         num_patch=((H-args.patch_size)//32+1,(W-args.patch_size)//8+1)
@@ -236,37 +214,7 @@ class Trainer:
                             prob = best_model(c_image)
                         out_sample.append(prob)
                     ex_pred_mask= torch.cat(out_sample,0)
-                    # if self.patch:
-                    #     # ex_image = window_partition(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
-                    #     # ex_edge = window_partition(ex_edge.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size]).permute(0,3,1,2).contiguous()
-                    #     ex_image = kornia.contrib.extract_tensor_patches(ex_image, args.patch_size, args.patch_size//4).flatten(0,1)
-                    #     ex_edge = kornia.contrib.extract_tensor_patches(ex_edge, args.patch_size, args.patch_size//4).flatten(0,1)
-                    # chunk_size = max(ex_image.shape[0]//500,1)
-                    # chunk_image = torch.chunk(ex_image,chunk_size,0)
-                    # chunk_edge = torch.chunk(ex_edge,chunk_size,0)
-                    # out_sample=[]
-                    # for chunk in zip(chunk_image,chunk_edge):
-                    #     c_image,c_edge=chunk
-
-                    # if check_model_forward_args(best_model) == 2:
-                    #     ex_pred_mask = best_model(ex_image, ex_edge)
-                    # else:
-                    #     ex_pred_mask = best_model(ex_image)
-                    #     out_sample.append(prob)
-                    # ex_pred_mask= torch.cat(out_sample,0)
-                    # if check_model_forward_args(self.model)==2:
-                    #     ex_pred_mask = best_model(ex_image,ex_edge)
-                    # else:
-                    #     ex_pred_mask = best_model(ex_image)
                     if self.patch:
-                        # ex_pred_mask = kornia.contrib.combine_tensor_patches(ex_pred_mask.view(B,-1,1,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
-                        # ex_image = kornia.contrib.combine_tensor_patches(ex_image.view(B,-1,C,args.patch_size,args.patch_size), original_size=(H,W),window_size=args.patch_size,stride=args.patch_size//4)
-                        # ex_pred_mask=window_reverse(ex_pred_mask.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
-                        # ex_image=window_reverse(ex_image.permute(0,2,3,1).contiguous(),[args.patch_size,args.patch_size],[H,W]).permute(0,3,1,2).contiguous()
-                        # if self.type_split=='random':
-                        #     h, w = ex_mask.shape[-2:]
-                        #     ex_pred_mask=ex_pred_mask[:,:,:h,:w]
-                        #     ex_image=ex_image[:,:,:h,:w]
                         if stride is not None:
                             ex_pred_mask = ex_pred_mask.view(B,-1,1,args.patch_size,args.patch_size)
                             ex_image = ex_image.view(B,-1,C,args.patch_size,args.patch_size)
@@ -276,8 +224,7 @@ class Trainer:
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
                     ex_pred_mask=torch.where(ex_pred_mask>=0.485,1,0)
-                    # print(ex_pred_mask.shape)
-                    # print(ex_image.shape)
+
                     for i in range(len(ex_image)):
                         image_np = ex_image[i].permute(1,2,0).mean(-1).squeeze().detach().cpu().numpy()
                         if image_np.max() <= 1.0:
@@ -345,9 +292,6 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                 m.apply(init_weights_xavier)
         except:
             pass
-        # if patch:
-        #     _=model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
-        # model.zero_grad()
         num_params=count_trainable_params(model)
         model_class_name = type(model).__name__
         timestamp = datetime.now().strftime('%Y%m%d_%H')
@@ -385,10 +329,20 @@ def gpu_worker(gpu_id, task_queue, result_queue):
             result_queue.put((name, best_avg))
             wandb.summary["num params"] = num_params
             wandb.finish()
+        # <<< KHỐI CATCH LỖI ĐÃ ĐƯỢC CHỈNH SỬA >>>
         except Exception as ex:
+            # Lấy thông tin traceback chi tiết dưới dạng chuỗi
+            detailed_error = traceback.format_exc()
+            
+            # In thông báo lỗi ngắn gọn và cả traceback chi tiết
             print(f"[GPU {gpu_id}] train on {name} has error: {ex}")
-            wandb.finish()
-
+            print("\n---------- Full Traceback ----------")
+            print(detailed_error)
+            print("------------------------------------\n")
+            
+            # Đảm bảo wandb được kết thúc đúng cách
+            if wandb.run is not None:
+                wandb.finish()
 
 
 if __name__ == '__main__':
@@ -437,5 +391,3 @@ if __name__ == '__main__':
         print("=========================")
     else:
         print("Không có kết quả nào được trả về từ các process.")
-        
-            
