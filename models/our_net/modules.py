@@ -214,10 +214,18 @@ class MAB(nn.Module):
         b2 = b2_t.transpose(-2, -1).contiguous()   # (B, C, H, W)
 
         fusion = b1 + b2 - b1*b2 
-        d_fusion = torch.cat([fusion, fusion], dim=1)
-        out = self.cat(torch.cat([b1, b2], dim=1)) + x - d_fusion 
+        # d_fusion = torch.cat([fusion, fusion], dim=1) 
+        
+        # Thay thế d_fusion bằng fusion ở đây
+        out = self.cat(torch.cat([b1, b2], dim=1)) + x - fusion 
 
         return self.act(out)
+
+
+
+
+
+
     
 
 class down_sampling(nn.Module):
@@ -256,10 +264,10 @@ class UpFunc(nn.Module):
         self.conv_1=nn.Conv2d(2*in_channels,out_channels,3,padding='same',bias=False)
         self.grnorm = nn.GroupNorm(num_groups=in_channels, num_channels=in_channels*2, affine=False)
         self.gelu=nn.GELU()
-    def forward(self,x):
-        up_s=self.up_sampling(x)
-        up_c=self.up_conv(x)
-        cat_u = torch.cat((2*up_s,up_c),1)
+    def forward(self, x):
+        up_s = self.up_sampling(x)
+        up_c = self.up_conv(x)
+        cat_u = torch.cat((2*up_s, up_c), 1)
         cat_u = self.grnorm(cat_u)
 
         return self.gelu(self.conv_1(cat_u))
