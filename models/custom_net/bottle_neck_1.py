@@ -156,12 +156,11 @@ class VGG(nn.Module):
 class ResNet(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(ResNet, self).__init__() 
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3) 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding='same') 
         self.gelu1 = nn.GELU()
-        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, padding='same')
         self.gelu2 = nn.GELU() 
 
-        # projection layer nếu số kênh thay đổi
         if in_channels != out_channels:
             self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding='same')
         else:
@@ -172,12 +171,11 @@ class ResNet(nn.Module):
         x = self.gelu1(x) 
         x = self.conv2(x) 
 
-        shortcut = self.shortcut(X)   # đảm bảo cùng số kênh
+        shortcut = self.shortcut(X)
         x = x + shortcut
 
         x = self.gelu2(x) 
-        return x 
-
+        return x
 
 class CustomBottleNeck1(nn.Module): 
     def __init__(self, in_channels, out_channels): 
