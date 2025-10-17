@@ -2,7 +2,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
-from bottle_neck import BottleNeck,CAB
+# from bottle_neck import BottleNeck,CAB
 from bottle_neck_1 import CustomBottleNeck1
 # import sys
 # import torch.nn.functional as F
