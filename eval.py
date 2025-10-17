@@ -79,6 +79,10 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             # prob_2=prob_2[:,:,:h,:w]
             prob = prob[:,:,:h,:w]
             prob= prob.squeeze().detach().cuda().flatten()
+
+            prob_1 = prob_1[:,:,:h, :w] 
+            prob_1 = prob_1.squeeze().detach().cuda().flatten() 
+            
             mask = mask.squeeze().detach().cuda().flatten()
             # print(mask.dtype)
             # print(prob.dtype)
