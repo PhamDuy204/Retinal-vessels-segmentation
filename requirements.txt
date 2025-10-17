@@ -14,3 +14,4 @@ PyWavelets
 kornia
 causal-conv1d
 pytorch_wavelets
+einops
