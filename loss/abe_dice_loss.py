@@ -27,15 +27,17 @@ class AbeDiceLoss(nn.Module):
     def __init__(self):
         super().__init__()
         pass
+    
     def compute_loss(self,pred,truth):
         # print(pred)
         pred = pred.squeeze(1).float()
         truth = truth.squeeze(1).float()
-
+        pred_flat = pred.flatten()
+        truth_flat = truth.flatten()
         sig_pred=F.sigmoid(pred)
         # jaccard_loss=1-((torch.sum(sig_pred*truth)+1e-6)/(torch.sum(sig_pred+truth-sig_pred*truth)+1e-6))
         # print(jaccard_loss)
-        focal_loss = torch.mean(-((1-sig_pred)**2)*truth*torch.log(sig_pred+1e-6)-(sig_pred**2)*(1-truth)*torch.log((1-sig_pred)+1e-6))
+        focal_loss = torch.mean(-((1 - pred_flat)**2) * truth_flat * torch.log(pred_flat + 1e-6) - (pred_flat**2) * (1 - truth_flat) * torch.log((1 - pred_flat) + 1e-6))
         diceloss = 1-(torch.sum(2*sig_pred*truth)/(torch.sum(sig_pred+truth)+1e-6))
         bce_loss = nn.BCEWithLogitsLoss()(pred,truth)
         return diceloss+bce_loss+5*focal_loss+nn.MSELoss()(sig_pred,truth)+5*MultiScopeLoss()(sig_pred,truth)        
@@ -52,7 +54,9 @@ class AbeDiceLoss(nn.Module):
         for _ in range(len(preds)):
             t_truth.append(truth)
         cat_truth=torch.cat(t_truth,0)
-        cat_pred=torch.cat(preds,0)
+        cat_pred=torch.cat([preds], 0)
 
         loss=self.compute_loss(cat_pred,cat_truth)
         return loss
+
+        

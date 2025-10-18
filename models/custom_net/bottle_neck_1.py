@@ -140,9 +140,9 @@ class Depthwise(nn.Module):
 class VGG(nn.Module): 
     def __init__(self, in_channels, out_channels): 
         super(VGG, self).__init__() 
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3)
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding='same')
         self.gelu1 = nn.GELU()
-        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5)
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, padding='same')
         self.gelu2 = nn.GELU() 
 
     def forward(self, X): 
@@ -150,8 +150,7 @@ class VGG(nn.Module):
         x = self.gelu1(x) 
         x = self.conv2(x) 
         x = self.gelu2(x) 
-        return x 
-
+        return x
 
 class ResNet(nn.Module): 
     def __init__(self, in_channels, out_channels): 
