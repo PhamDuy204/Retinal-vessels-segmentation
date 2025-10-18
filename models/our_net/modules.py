@@ -40,7 +40,7 @@ class ConvFunc(nn.Module):
         return self.act(self.merge(torch.cat((x,y),1)))  
 
 class MKIR(nn.Module):
-    def __init__(self, in_channels, out_channels, in_size=(64,64)): # them nhieu6 kernel size 
+    def __init__(self, in_channels, out_channels, in_size=(64,64)):
         super().__init__()
         # project in -> out (1x1)
         self.first_conv = nn.Conv2d(in_channels, out_channels, 1, bias=False)
@@ -80,7 +80,7 @@ class MKIR(nn.Module):
         b3 = self.b3(x)
         merged = self.conv_1(torch.cat((b1,b2,b3,x),1)) 
         # print(merged.shape)
-        return self.out(torch.cat((merged*2, x), dim=1))
+        return self.out(torch.cat((merged, x), dim=1))
         
 
 class CA(nn.Module):
@@ -190,14 +190,14 @@ class MAB(nn.Module):
             CA(in_channels),
             SA(),
             nn.Conv2d(in_channels, in_channels, 1, bias=False),
-            nn.Mish()
+            nn.Sigmoid()
         )
 
         self.branch_t = nn.Sequential(
             CA(in_channels),
             SA(),
             nn.Conv2d(in_channels, in_channels, 1, bias=False),
-            nn.Mish()
+            nn.Sigmoid()
         )
         self.cat = nn.Sequential(
             nn.Conv2d(2 * in_channels, in_channels, 3, padding=_same_padding(3), bias=False),
@@ -212,20 +212,8 @@ class MAB(nn.Module):
         t_x = x.transpose(-2, -1).contiguous()     # (B, C, W, H)
         b2_t = t_x * self.branch_t(t_x)            # (B, C, W, H)
         b2 = b2_t.transpose(-2, -1).contiguous()   # (B, C, H, W)
-
-        fusion = b1 + b2 - b1*b2 
-        # d_fusion = torch.cat([fusion, fusion], dim=1) 
-        
-        # Thay thế d_fusion bằng fusion ở đây
-        out = self.cat(torch.cat([b1, b2], dim=1)) + x - fusion 
-
+        out = self.cat(torch.cat([b1, b2], dim=1)) + x
         return self.act(out)
-
-
-
-
-
-
     
 
 class down_sampling(nn.Module):
@@ -241,20 +229,14 @@ class down_sampling(nn.Module):
         )
         self.mkir = nn.Sequential(MKIR(out_channels, out_channels, in_size=in_size),MAB(out_channels))
 
-        self.down_1 = nn.Conv2d(out_channels, out_channels, kernel_size=2, stride=2, bias=False)
-        self.down_2 = nn.MaxPool2d(kernel_size=2, stride=2) 
+        self.down = nn.Conv2d(out_channels, out_channels, kernel_size=2, stride=2, bias=False)
 
     def forward(self, x):
         x0 = self.proj(x)
 
         x1 = self.mkir(x0)
         out = self.proj_2(torch.cat((x1,x0),1)) 
-        
-        down1 = self.down_1(out) 
-        down2 = self.down_2(out) 
-
-        down = (down1 + down2) / 2
-        return out, down
+        return out, self.down(out)
 
 class UpFunc(nn.Module):
     def __init__(self, in_channels,out_channels,scale_factor=2):
@@ -262,17 +244,12 @@ class UpFunc(nn.Module):
         self.up_sampling=nn.Upsample(scale_factor=scale_factor,mode='bicubic', align_corners=False)
         self.up_conv=nn.ConvTranspose2d(in_channels,in_channels,scale_factor,stride=scale_factor,bias=False)
         self.conv_1=nn.Conv2d(2*in_channels,out_channels,3,padding='same',bias=False)
-        self.grnorm = nn.GroupNorm(num_groups=in_channels, num_channels=in_channels*2, affine=False)
         self.gelu=nn.GELU()
-    def forward(self, x):
-        up_s = self.up_sampling(x)
-        up_c = self.up_conv(x)
-        cat_u = torch.cat((2*up_s, up_c), 1)
-        cat_u = self.grnorm(cat_u)
-
-        return self.gelu(self.conv_1(cat_u))
-        
-
+    def forward(self,x):
+        up_s=self.up_sampling(x)
+        up_c=self.up_conv(x)
+        cat_u=torch.cat((up_s,up_c),1)
+        return  self.gelu(self.conv_1(cat_u))
        
 class up_sampling(nn.Module):
     def __init__(self,in_channels,in_channels_t,out_channels,in_size):

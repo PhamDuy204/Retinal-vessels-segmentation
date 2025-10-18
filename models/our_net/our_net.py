@@ -79,4 +79,3 @@ class SegModel(nn.Module):
         if self.training:
            return final_out,self.sig(out),self.sig(out_1),self.sig(out_0)
         return F.sigmoid(final_out)
-# Kaiming init 
