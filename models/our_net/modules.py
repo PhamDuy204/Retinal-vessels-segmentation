@@ -6,7 +6,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from bottle_neck import *
 from typing import Optional
-
+from mamba_ssm import Mamba2 
 
 def _same_padding(kernel_size, dilation=1):
     k = kernel_size
@@ -216,27 +216,74 @@ class MAB(nn.Module):
         return self.act(out)
     
 
-class down_sampling(nn.Module):
-    def __init__(self, in_channels, out_channels, in_size):
-        super().__init__()
-        self.proj = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 1, bias=False),
-            nn.ReLU()
+# class down_sampling(nn.Module):
+#     def __init__(self, in_channels, out_channels, in_size):
+#         super().__init__()
+#         self.proj = nn.Sequential(
+#             nn.Conv2d(in_channels, out_channels, 1, bias=False),
+#             nn.ReLU()
+#         )
+#         self.proj_2 = nn.Sequential(
+#             nn.Conv2d(2*out_channels, out_channels, 1, bias=False),
+#             nn.ReLU()
+#         )
+#         self.mkir = nn.Sequential(MKIR(out_channels, out_channels, in_size=in_size),MAB(out_channels))
+
+#         self.down = nn.Conv2d(out_channels, out_channels, kernel_size=2, stride=2, bias=False)
+
+#     def forward(self, x):
+#         x0 = self.proj(x)
+
+#         x1 = self.mkir(x0)
+#         out = self.proj_2(torch.cat((x1,x0),1)) 
+#         return out, self.down(out)
+
+
+class down_sampling(nn.Module): 
+    def __init__(self, in_channels, out_channels, in_size): 
+        super().__init__() 
+        
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding='same', bias=False), 
+            nn.LeakyReLU() 
         )
-        self.proj_2 = nn.Sequential(
-            nn.Conv2d(2*out_channels, out_channels, 1, bias=False),
-            nn.ReLU()
+
+        self.mamba = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2)
+        self.mamba_rev = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2)
+
+        self.fusion = nn.Sequential(
+            SA(), 
+            MKIR(out_channels * 2, out_channels)
         )
-        self.mkir = nn.Sequential(MKIR(out_channels, out_channels, in_size=in_size),MAB(out_channels))
+
+        self.proj_out = nn.Sequential(
+            nn.Conv2d(out_channels * 2, out_channels, 1, bias=False),
+            nn.LeakyReLU()
+        )
 
         self.down = nn.Conv2d(out_channels, out_channels, kernel_size=2, stride=2, bias=False)
 
-    def forward(self, x):
-        x0 = self.proj(x)
+    
+    def forward(self, x): 
+        x0 = self.conv(x)
+        b, c, h, w = x0.shape 
 
-        x1 = self.mkir(x0)
-        out = self.proj_2(torch.cat((x1,x0),1)) 
+        seq = x0.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
+
+        forward_states = self.mamba(seq)
+
+        rev_seq = torch.flip(seq, dims=[1])
+        backward_states_rev = self.mamba_rev(rev_seq)
+        backward_states = torch.flip(backward_states_rev, dims=[1])
+
+        mamba_out_seq = torch.cat((forward_states, backward_states), dim=-1)
+        mamba_out_img = mamba_out_seq.view(b, h, w, c * 2).permute(0, 3, 1, 2).contiguous()
+        x1 = self.fusion(mamba_out_img)
+
+        out = self.proj_out(torch.cat((x1, x0), dim=1))
+
         return out, self.down(out)
+
 
 class UpFunc(nn.Module):
     def __init__(self, in_channels,out_channels,scale_factor=2):
