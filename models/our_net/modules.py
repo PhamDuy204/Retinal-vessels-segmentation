@@ -248,8 +248,8 @@ class down_sampling(nn.Module):
             nn.LeakyReLU() 
         )
 
-        self.mamba = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2)
-        self.mamba_rev = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2)
+        self.mamba = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2, headdim=4)
+        self.mamba_rev = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2, headdim=4)
 
         self.fusion = nn.Sequential(
             SA(), 
