@@ -1,8 +1,12 @@
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mamba_ssm import Mamba2
-
+#from mamba_ssm import Mamba2
+from modules import SA, CA
 # --- helpers ---
 def _same_padding(kernel_size, dilation=1):
     k = kernel_size
@@ -21,101 +25,123 @@ def get_rmsnorm(dim: int):
     else:
         return nn.LayerNorm(dim)
 
-class CAB(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.pre_norm = nn.GroupNorm(safe_group(in_channels, 8), in_channels, affine=True)
 
-        self.norm_qk = nn.LayerNorm(in_channels)
-        self.q = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.k = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.v = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.pj = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        mid = max(in_channels * 2, 16)
-        self.ff = nn.Sequential(
-            nn.Conv2d(in_channels, mid, 1, bias=False),
-            nn.GELU(),
-            nn.Conv2d(mid, in_channels, 1, bias=False),
+
+class TSB(nn.Module): 
+    def __init__(self, in_channels, out_channels): 
+        super(TSB, self).__init__() 
+        
+        # Layer 1 
+        self.conv11 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                               groups=in_channels, kernel_size=3, padding='same', dilation=1, bias=False)
+        self.conv12 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                                groups=in_channels, kernel_size=3, padding='same', dilation=2, bias=False)
+        self.conv13 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                                groups=in_channels, kernel_size=3, padding='same', dilation=3, bias=False)
+        
+        # Layer 2
+        self.conv21 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+        self.conv22 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+        self.conv23 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
+                                kernel_size=1, padding='same')
+        
+        # Layer 3
+        self.conv31 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+        self.conv32 = nn.Conv2d(in_channels=out_channels*3, out_channels=out_channels, 
+                                kernel_size=1, padding='same')
+           
+    def forward(self, X): 
+        x11 = self.conv11(X) 
+        x12 = self.conv12(X) 
+        x13 = self.conv13(X) 
+
+        x21 = self.conv21(x11)
+        x22 = self.conv22(x12) 
+        x23 = self.conv23(x13) 
+
+        x22 = x22 + x21 
+        x23 = x23 + x22 
+
+        x31 = self.conv31(X) 
+        x32 = torch.concat([x21, x22, x23], dim=1)
+        x32 = self.conv32(x32)
+
+        out = x31 + x32
+
+        return out  
+
+class VGG(nn.Module): 
+    def __init__(self, in_channels, out_channels): 
+        super(VGG, self).__init__() 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                               kernel_size=3, padding='same', bias=False, dilation=1)
+        self.gelu1 = nn.GELU()
+
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                               kernel_size=3, padding='same', bias=False, dilation=3) 
+        self.gelu2 = nn.GELU() 
+
+    def forward(self, X): 
+        x = self.conv1(X) 
+        x = self.gelu1(x) 
+        x = self.conv2(x) 
+        x = self.gelu2(x) 
+        return x
+
+class ResNet(nn.Module): 
+    def __init__(self, in_channels, out_channels): 
+        super(ResNet, self).__init__() 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
+                               kernel_size=3, padding='same', dilation=1) 
+        
+        self.gelu1 = nn.GELU()
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                               kernel_size=3, padding='same', dilation=3) 
+                               
+        self.gelu2 = nn.GELU() 
+
+        if in_channels != out_channels:
+            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding='same')
+        else:
+            self.shortcut = nn.Identity()
+
+    def forward(self, X): 
+        x = self.conv1(X) 
+        x = self.gelu1(x) 
+        x = self.conv2(x) 
+
+        shortcut = self.shortcut(X)
+        x = x + shortcut
+
+        x = self.gelu2(x) 
+        return x
+
+class BottleNeck(nn.Module): 
+    def __init__(self, in_channels, out_channels): 
+        super(BottleNeck, self).__init__() 
+        self.branch_1 = nn.Sequential(
+            VGG(in_channels, in_channels*2), 
+            SA(), 
         )
 
-    def forward(self, x):
-        """
-        x: (B, C, H, W)
-        returns: (B, C, H, W) with residual
-        """
-        b, c, h, w = x.shape
-        norm_x = self.pre_norm(x)              
-        q = self.q(norm_x)                      
-        k = self.k(norm_x)
-        v = self.v(norm_x)
-
-
-        N = h * w
-        q_flat = q.permute(0, 2, 3, 1).contiguous().view(b, N, c) 
-        k_flat = k.permute(0, 2, 3, 1).contiguous().view(b, N, c)
-        v_flat = v.permute(0, 2, 3, 1).contiguous().view(b, N, c)
-
-
-        qn = self.norm_qk(q_flat)  
-        kn = self.norm_qk(k_flat)
-
-
-        scale = torch.sqrt(torch.tensor(c, dtype=qn.dtype, device=qn.device))
-        attn_logits = torch.matmul(qn, kn.transpose(-1, -2)) / scale
-        attn = torch.softmax(attn_logits, dim=-1)  
-
-
-        out_flat = torch.matmul(attn, v_flat) 
-
-        out = out_flat.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()  
-        out = self.pj(out)  
-        ff_out = self.ff(out) 
-
-        return x + ff_out 
-
-
-
-class BottleNeck(nn.Module):
-    def __init__(self, dimension, d_state=16):
-        super().__init__()
-        self.pre_norm = get_rmsnorm(dimension)
-        self.rev_pre_norm = get_rmsnorm(dimension)
-        self.post_norm = get_rmsnorm(dimension)
-
-        self.mamba = Mamba2(dimension, 64, conv_bias=False, d_conv=4, expand=2)
-        self.mamba2 = Mamba2(dimension, 64, conv_bias=False, d_conv=4, expand=2)
-
-        self.merge = nn.Sequential(
-            nn.Linear(2 * dimension, max(dimension // 2, 8), bias=False),
-            nn.GELU(),
-            nn.Linear(max(dimension // 2, 8), dimension, bias=False),
+        self.branch_2 = nn.Sequential(
+            ResNet(in_channels, in_channels*2), 
+            CA(in_channels*2), 
         )
 
-    def forward(self, x: torch.Tensor):
-        """
-        x: (B, C, H, W)
-        returns: (B, C, H, W)
-        """
-        b, c, h, w = x.shape
+        self.tsb = TSB(in_channels*2, out_channels) 
+        self.gn = nn.GroupNorm(num_channels=out_channels, num_groups=out_channels, affine=False)
 
+    def forward(self, X): 
+        x_1 = self.branch_1(X)
+        x_2 = self.branch_2(X) 
 
-        seq = x.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
+        fusion = x_1 + x_2 - x_1 * x_2 
 
+        out = self.tsb(fusion) 
+        out = self.gn(out) 
 
-        norm_fwd = self.pre_norm(seq) 
-        forward_states = self.mamba(norm_fwd) + seq
-
-        rev_seq = torch.flip(seq, dims=[1])
-        norm_rev = self.rev_pre_norm(rev_seq)
-        backward_states = self.mamba2(norm_rev) + rev_seq
-
-        backward_states = torch.flip(backward_states, dims=[1])
-
-       
-        merged = self.merge(torch.cat((forward_states, backward_states), dim=-1)) 
-
-        merged = self.post_norm(merged)
-
-
-        out = merged.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()
-        return out
+        return out  

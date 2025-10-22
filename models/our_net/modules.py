@@ -4,9 +4,8 @@ import torch.nn.functional as F
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from bottle_neck import *
 from typing import Optional
-from mamba_ssm import Mamba2 
+# from mamba_ssm import Mamba2 
 
 def _same_padding(kernel_size, dilation=1):
     k = kernel_size
@@ -182,6 +181,60 @@ class AG(nn.Module):
 
         return self.merge(torch.cat((x_e,self.change_dim(merge)),1))+merge
 
+
+class CAB(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.pre_norm = nn.GroupNorm(safe_group(in_channels, 8), in_channels, affine=True)
+
+        self.norm_qk = nn.LayerNorm(in_channels)
+        self.q = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.k = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.v = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.pj = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        mid = max(in_channels * 2, 16)
+        self.ff = nn.Sequential(
+            nn.Conv2d(in_channels, mid, 1, bias=False),
+            nn.GELU(),
+            nn.Conv2d(mid, in_channels, 1, bias=False),
+        )
+
+    def forward(self, x):
+        """
+        x: (B, C, H, W)
+        returns: (B, C, H, W) with residual
+        """
+        b, c, h, w = x.shape
+        norm_x = self.pre_norm(x)              
+        q = self.q(norm_x)                      
+        k = self.k(norm_x)
+        v = self.v(norm_x)
+
+
+        N = h * w
+        q_flat = q.permute(0, 2, 3, 1).contiguous().view(b, N, c) 
+        k_flat = k.permute(0, 2, 3, 1).contiguous().view(b, N, c)
+        v_flat = v.permute(0, 2, 3, 1).contiguous().view(b, N, c)
+
+
+        qn = self.norm_qk(q_flat)  
+        kn = self.norm_qk(k_flat)
+
+
+        scale = torch.sqrt(torch.tensor(c, dtype=qn.dtype, device=qn.device))
+        attn_logits = torch.matmul(qn, kn.transpose(-1, -2)) / scale
+        attn = torch.softmax(attn_logits, dim=-1)  
+
+
+        out_flat = torch.matmul(attn, v_flat) 
+
+        out = out_flat.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()  
+        out = self.pj(out)  
+        ff_out = self.ff(out) 
+
+        return x + ff_out 
+
+
 class MAB(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -216,73 +269,73 @@ class MAB(nn.Module):
         return self.act(out)
     
 
-# class down_sampling(nn.Module):
-#     def __init__(self, in_channels, out_channels, in_size):
-#         super().__init__()
-#         self.proj = nn.Sequential(
-#             nn.Conv2d(in_channels, out_channels, 1, bias=False),
-#             nn.ReLU()
-#         )
-#         self.proj_2 = nn.Sequential(
-#             nn.Conv2d(2*out_channels, out_channels, 1, bias=False),
-#             nn.ReLU()
-#         )
-#         self.mkir = nn.Sequential(MKIR(out_channels, out_channels, in_size=in_size),MAB(out_channels))
-
-#         self.down = nn.Conv2d(out_channels, out_channels, kernel_size=2, stride=2, bias=False)
-
-#     def forward(self, x):
-#         x0 = self.proj(x)
-
-#         x1 = self.mkir(x0)
-#         out = self.proj_2(torch.cat((x1,x0),1)) 
-#         return out, self.down(out)
-
-
-class down_sampling(nn.Module): 
-    def __init__(self, in_channels, out_channels, in_size): 
-        super().__init__() 
-        
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding='same', bias=False), 
-            nn.LeakyReLU() 
+class down_sampling(nn.Module):
+    def __init__(self, in_channels, out_channels, in_size):
+        super().__init__()
+        self.proj = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 1, bias=False),
+            nn.ReLU()
         )
-
-        self.mamba = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2, headdim=4)
-        self.mamba_rev = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2, headdim=4)
-
-        self.fusion = nn.Sequential(
-            SA(), 
-            MKIR(out_channels * 2, out_channels)
+        self.proj_2 = nn.Sequential(
+            nn.Conv2d(2*out_channels, out_channels, 1, bias=False),
+            nn.ReLU()
         )
-
-        self.proj_out = nn.Sequential(
-            nn.Conv2d(out_channels * 2, out_channels, 1, bias=False),
-            nn.LeakyReLU()
-        )
+        self.mkir = nn.Sequential(MKIR(out_channels, out_channels, in_size=in_size),MAB(out_channels))
 
         self.down = nn.Conv2d(out_channels, out_channels, kernel_size=2, stride=2, bias=False)
 
-    
-    def forward(self, x): 
-        x0 = self.conv(x)
-        b, c, h, w = x0.shape 
+    def forward(self, x):
+        x0 = self.proj(x)
 
-        seq = x0.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
-
-        forward_states = self.mamba(seq)
-
-        rev_seq = torch.flip(seq, dims=[1])
-        backward_states_rev = self.mamba_rev(rev_seq)
-        backward_states = torch.flip(backward_states_rev, dims=[1])
-
-        mamba_out_seq = torch.cat((forward_states, backward_states), dim=-1)
-        mamba_out_img = mamba_out_seq.view(b, h, w, c * 2).permute(0, 3, 1, 2).contiguous()
-        x1 = self.fusion(mamba_out_img)
-
-        out = self.proj_out(torch.cat((x1, x0), dim=1))
-
+        x1 = self.mkir(x0)
+        out = self.proj_2(torch.cat((x1,x0),1)) 
         return out, self.down(out)
+
+
+# class down_sampling(nn.Module): 
+#     def __init__(self, in_channels, out_channels, in_size): 
+#         super().__init__() 
+        
+#         self.conv = nn.Sequential(
+#             nn.Conv2d(in_channels, out_channels, 3, padding='same', bias=False), 
+#             nn.LeakyReLU() 
+#         )
+
+#         self.mamba = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2, headdim=4)
+#         self.mamba_rev = Mamba2(out_channels, 64, conv_bias=False, d_conv=4, expand=2, headdim=4)
+
+#         self.fusion = nn.Sequential(
+#             SA(), 
+#             MKIR(out_channels * 2, out_channels)
+#         )
+
+#         self.proj_out = nn.Sequential(
+#             nn.Conv2d(out_channels * 2, out_channels, 1, bias=False),
+#             nn.LeakyReLU()
+#         )
+
+#         self.down = nn.Conv2d(out_channels, out_channels, kernel_size=2, stride=2, bias=False)
+
+    
+#     def forward(self, x): 
+#         x0 = self.conv(x)
+#         b, c, h, w = x0.shape 
+
+#         seq = x0.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
+
+#         forward_states = self.mamba(seq)
+
+#         rev_seq = torch.flip(seq, dims=[1])
+#         backward_states_rev = self.mamba_rev(rev_seq)
+#         backward_states = torch.flip(backward_states_rev, dims=[1])
+
+#         mamba_out_seq = torch.cat((forward_states, backward_states), dim=-1)
+#         mamba_out_img = mamba_out_seq.view(b, h, w, c * 2).permute(0, 3, 1, 2).contiguous()
+#         x1 = self.fusion(mamba_out_img)
+
+#         out = self.proj_out(torch.cat((x1, x0), dim=1))
+
+#         return out, self.down(out)
 
 
 class UpFunc(nn.Module):
