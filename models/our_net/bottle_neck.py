@@ -41,17 +41,17 @@ class TSB(nn.Module):
         
         # Layer 2
         self.conv21 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
+                                kernel_size=1, padding='same', bias=False)
         self.conv22 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
+                                kernel_size=1, padding='same', bias=False)
         self.conv23 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
-                                kernel_size=1, padding='same')
+                                kernel_size=1, padding='same', bias=False)
         
         # Layer 3
         self.conv31 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
+                                kernel_size=1, padding='same', bias=False)
         self.conv32 = nn.Conv2d(in_channels=out_channels*3, out_channels=out_channels, 
-                                kernel_size=1, padding='same')
+                                kernel_size=1, padding='same', bias=False)
            
     def forward(self, X): 
         x11 = self.conv11(X) 
@@ -81,8 +81,8 @@ class VGG(nn.Module):
         self.gelu1 = nn.GELU()
 
         self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                               kernel_size=3, padding='same', bias=False, dilation=3) 
-        self.gelu2 = nn.GELU() 
+                               kernel_size=3, padding='same', bias=False, dilation=2) 
+        self.gelu2 = nn.ReLU() 
 
     def forward(self, X): 
         x = self.conv1(X) 
@@ -95,16 +95,16 @@ class ResNet(nn.Module):
     def __init__(self, in_channels, out_channels): 
         super(ResNet, self).__init__() 
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                               kernel_size=3, padding='same', dilation=1) 
+                               kernel_size=3, padding='same', dilation=1, bias=False) 
         
         self.gelu1 = nn.GELU()
         self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                               kernel_size=3, padding='same', dilation=3) 
+                               kernel_size=3, padding='same', dilation=2, bias=False) 
                                
-        self.gelu2 = nn.GELU() 
+        self.gelu2 = nn.ReLU() 
 
         if in_channels != out_channels:
-            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding='same')
+            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding='same', bias=False)
         else:
             self.shortcut = nn.Identity()
 
@@ -133,7 +133,8 @@ class BottleNeck(nn.Module):
         )
 
         self.tsb = TSB(in_channels*2, out_channels) 
-        self.gn = nn.GroupNorm(num_channels=out_channels, num_groups=out_channels, affine=False)
+        self.gn = nn.GroupNorm(num_channels=out_channels, 
+                               num_groups=out_channels, affine=False)
 
     def forward(self, X): 
         x_1 = self.branch_1(X)
