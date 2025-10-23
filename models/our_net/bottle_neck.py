@@ -33,7 +33,7 @@ class TSB(nn.Module):
         
         # Layer 1 
         self.conv11 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
-                               groups=in_channels, kernel_size=3, padding='same', dilation=1, bias=False)
+                                groups=in_channels, kernel_size=3, padding='same', dilation=1, bias=False)
         self.conv12 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
                                 groups=in_channels, kernel_size=3, padding='same', dilation=2, bias=False)
         self.conv13 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
@@ -78,7 +78,7 @@ class VGG(nn.Module):
         super(VGG, self).__init__() 
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
                                kernel_size=3, padding='same', bias=False, dilation=1)
-        self.gelu1 = nn.GELU()
+        self.gelu1 = nn.ReLU()
 
         self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
                                kernel_size=3, padding='same', bias=False, dilation=2) 
@@ -97,7 +97,7 @@ class ResNet(nn.Module):
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, 
                                kernel_size=3, padding='same', dilation=1, bias=False) 
         
-        self.gelu1 = nn.GELU()
+        self.gelu1 = nn.ReLU()
         self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
                                kernel_size=3, padding='same', dilation=2, bias=False) 
                                

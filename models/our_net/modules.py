@@ -32,7 +32,7 @@ class ConvFunc(nn.Module):
 
         self.gn = nn.GroupNorm(8,in_channels, affine=False)
         self.act = nn.ReLU()
-        self.merge=nn.Conv2d(2*in_channels, in_channels, 3,padding='same',bias=False)
+        self.merge=nn.Conv2d(2*in_channels, in_channels, 1,padding='same',bias=False)
     def forward(self, x):
         y = self.conv(x)
         y = self.gn(y)
@@ -122,65 +122,110 @@ class SA(nn.Module):
 
 
 class AG(nn.Module):
-    def __init__(self,in_channels,in_size=(64,64)):
+    def __init__(self, in_channels, in_size=(64, 64), reduction_ratio=4, spatial_kernel_size=7):
+        """
+        Khởi tạo module AG cải tiến.
+        :param in_channels: Số lượng kênh đầu vào.
+        :param reduction_ratio: Tỷ lệ giảm kênh cho MLP trong channel attention.
+        :param spatial_kernel_size: Kích thước kernel cho spatial attention.
+        """
         super().__init__()
+        
+        # --- Phần 1: Feature Fusion ban đầu (Giữ nguyên) ---
+        # Các convolution này xử lý riêng biệt x_u và x_e
         self.gconv_x_u = nn.Sequential(
-            nn.Conv2d(in_channels,in_channels,3,groups=in_channels,padding='same',bias=False),
-            nn.ReLU(),)
-        self.gconv_x_e = nn.Sequential(nn.Conv2d(in_channels,in_channels,3,groups=in_channels,padding='same',bias=False),
-                                       nn.ReLU(),)
-        self.out =  nn.Sequential(
-            nn.Conv2d(2*in_channels,in_channels,1,bias=False),
-            nn.ReLU(),
-            )
-        self.compute_weigh=nn.Sequential(
-            nn.Conv1d(1,1,6,dilation=in_channels,bias=False),
+            nn.Conv2d(in_channels, in_channels, 3, groups=in_channels, padding='same', bias=False),
             nn.ReLU(),
         )
-        self.compute_weigh_1=nn.Sequential(
-            nn.Conv2d(in_channels,in_channels*16,1,bias=False),
+        self.gconv_x_e = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, 3, groups=in_channels, padding='same', bias=False),
             nn.ReLU(),
-            nn.Conv2d(in_channels*16,in_channels,1,bias=False),
+        )
+        # 1x1 conv để hợp nhất thông tin từ x_u và x_e
+        self.fuse_gconv = nn.Sequential(
+            nn.Conv2d(2 * in_channels, in_channels, 1, bias=False),
+            nn.ReLU(),
+        )
+
+        # --- Phần 2: Cải tiến Channel Attention ---
+        # Thay thế cho self.compute_weigh và self.compute_weigh_1
+        # Sử dụng MLP (bằng Conv2d 1x1) đơn giản và chuẩn hơn
+        # Đầu vào là 6*in_channels (từ 6x GAP/MAP)
+        self.channel_attention = nn.Sequential(
+            nn.Conv2d(6 * in_channels, in_channels // reduction_ratio, 1, bias=False),
+            nn.ReLU(),
+            nn.Conv2d(in_channels // reduction_ratio, in_channels, 1, bias=False),
             nn.Sigmoid()
         )
-        self.change_dim=nn.Sequential(
-            nn.Identity()
+
+        # --- Phần 3: Cải tiến - Bổ sung Spatial Attention ---
+        # Học "vị trí nào" là quan trọng
+        self.spatial_attention = nn.Sequential(
+            # Input là 2 kênh (từ AvgPool và MaxPool)
+            nn.Conv2d(2, 1, kernel_size=spatial_kernel_size,
+                      padding=spatial_kernel_size // 2, bias=False),
+            nn.Sigmoid()
         )
-        self.merge=nn.Sequential(
-            nn.Conv2d(2*in_channels,in_channels,3,padding='same',bias=False),
-            nn.GroupNorm(8,in_channels, affine=False),
+
+        # --- Phần 4: Final Merge (Giữ nguyên) ---
+        # Hợp nhất x_e (skip-connection) và merge-feature đã được attend
+        self.final_merge = nn.Sequential(
+            nn.Conv2d(2 * in_channels, in_channels, 3, padding='same', bias=False),
+            nn.GroupNorm(8, in_channels, affine=False), # Giữ nguyên GroupNorm
             nn.ReLU(),
         )
-        self.gap=nn.AdaptiveAvgPool2d(1)
-        self.map=nn.AdaptiveMaxPool2d(1)
-    def forward(self,x_e,x_u):
+        
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.map = nn.AdaptiveMaxPool2d(1)
+
+    def forward(self, x_e, x_u):
         '''
-        x_e : in_channels,h,w
-        x_u: in_channels,h,w
+        x_e : tensor (b, c, h, w) từ encoder (skip connection)
+        x_u: tensor (b, c, h, w) từ decoder (upsampled)
         '''
-        b,c,h,w=x_e.shape
-        gconv_x_u=self.gconv_x_u(x_u)
-        gconv_x_e=self.gconv_x_e(x_e)
-        merge= self.out(torch.cat((gconv_x_u,gconv_x_e),1))
-        gap_x_m=self.gap(merge)
-        # print(gap_x.shape)
-        map_m=self.map(merge)
+        b, c, h, w = x_e.shape
 
-        gap_x_e=self.gap(x_e)
-        # print(gap_x.shape)
-        gap_x_u=self.gap(x_u)
-        map_e=self.map(x_e)
-        map_x_u=self.map(x_u)
-        w=torch.cat((gap_x_e,map_e,gap_x_u,map_x_u,gap_x_m,map_m),1).flatten(-3).unsqueeze(1)
-        # print(w.shape)
-        # return
-        weigh= self.compute_weigh(w)
-        weigh=self.compute_weigh_1(weigh.view(b,-1,1,1))
-        # print(weigh.shape)
-        merge=merge*weigh
+        # 1. Feature Fusion ban đầu (giống code gốc)
+        gconv_x_u = self.gconv_x_u(x_u)
+        gconv_x_e = self.gconv_x_e(x_e)
+        # merge là feature đã hợp nhất thông tin
+        merge = self.fuse_gconv(torch.cat((gconv_x_u, gconv_x_e), 1)) # (b, c, h, w)
 
-        return self.merge(torch.cat((x_e,self.change_dim(merge)),1))+merge
+        # 2. Tính toán Channel Attention (phiên bản đơn giản hóa)
+        gap_x_m = self.gap(merge)
+        map_m = self.map(merge)
+        gap_x_e = self.gap(x_e)
+        gap_x_u = self.gap(x_u)
+        map_e = self.map(x_e)
+        map_x_u = self.map(x_u)
 
+        # Concat 6 features -> (b, 6*c, 1, 1)
+        global_context = torch.cat((gap_x_e, map_e, gap_x_u, map_x_u, gap_x_m, map_m), 1)
+        
+        # (b, 6*c, 1, 1) -> (b, c, 1, 1)
+        channel_weights = self.channel_attention(global_context)
+        
+        # Áp dụng Channel Attention
+        merge_ca = merge * channel_weights # (b, c, h, w)
+
+        # 3. Tính toán Spatial Attention (phần cải tiến mới)
+        # Pool dọc theo channel dimension
+        avg_pool = torch.mean(merge_ca, dim=1, keepdim=True) # (b, 1, h, w)
+        max_pool = torch.max(merge_ca, dim=1, keepdim=True)[0] # (b, 1, h, w)
+        
+        # (b, 2, h, w) -> (b, 1, h, w)
+        spatial_weights = self.spatial_attention(torch.cat([avg_pool, max_pool], dim=1))
+        
+        # Áp dụng Spatial Attention
+        # Phép nhân element-wise: (b, c, h, w) * (b, 1, h, w)
+        attended_merge = merge_ca * spatial_weights # (b, c, h, w)
+
+        # 4. Final Fusion và Residual Connection (giống code gốc)
+        # (self.change_dim đã được loại bỏ vì nó là nn.Identity)
+        fused_output = self.final_merge(torch.cat((x_e, attended_merge), 1))
+        
+        # Thêm residual connection (kết nối phần dư)
+        return fused_output + attended_merge
 
 class CAB(nn.Module):
     def __init__(self, in_channels):
