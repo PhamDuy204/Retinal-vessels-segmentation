@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-#from mamba_ssm import Mamba2
+from mamba_ssm import Mamba2
 from modules import SA, CA
 # --- helpers ---
 def _same_padding(kernel_size, dilation=1):
@@ -119,30 +119,75 @@ class ResNet(nn.Module):
         x = self.gelu2(x) 
         return x
 
-class BottleNeck(nn.Module): 
-    def __init__(self, in_channels, out_channels): 
-        super(BottleNeck, self).__init__() 
-        self.branch_1 = nn.Sequential(
-            VGG(in_channels, in_channels*2), 
-            SA(), 
+# class BottleNeck(nn.Module): 
+#     def __init__(self, in_channels, out_channels): 
+#         super(BottleNeck, self).__init__() 
+#         self.branch_1 = nn.Sequential(
+#             VGG(in_channels, in_channels*2), 
+#             SA(), 
+#         )
+
+#         self.branch_2 = nn.Sequential(
+#             ResNet(in_channels, in_channels*2), 
+#             CA(in_channels*2), 
+#         )
+
+#         self.tsb = TSB(in_channels*2, out_channels) 
+#         self.gn = nn.GroupNorm(num_channels=out_channels, 
+#                                num_groups=out_channels, affine=False)
+
+#     def forward(self, X): 
+#         x_1 = self.branch_1(X)
+#         x_2 = self.branch_2(X) 
+
+#         fusion = x_1 + x_2 - x_1 * x_2 
+
+#         out = self.tsb(fusion) 
+#         out = self.gn(out) 
+
+#         return out  
+    
+class BottleNeck(nn.Module):
+    def __init__(self, dimension, d_state=16):
+        super().__init__()
+        self.pre_norm = get_rmsnorm(dimension)
+        self.rev_pre_norm = get_rmsnorm(dimension)
+        self.post_norm = get_rmsnorm(dimension)
+
+        self.mamba = Mamba2(dimension, 64, conv_bias=False, d_conv=4, expand=2)
+        self.mamba2 = Mamba2(dimension, 64, conv_bias=False, d_conv=4, expand=2)
+
+        self.merge = nn.Sequential(
+            nn.Linear(2 * dimension, max(dimension // 2, 8), bias=False),
+            nn.GELU(),
+            nn.Linear(max(dimension // 2, 8), dimension, bias=False),
         )
 
-        self.branch_2 = nn.Sequential(
-            ResNet(in_channels, in_channels*2), 
-            CA(in_channels*2), 
-        )
+    def forward(self, x: torch.Tensor):
+        """
+        x: (B, C, H, W)
+        returns: (B, C, H, W)
+        """
+        b, c, h, w = x.shape
 
-        self.tsb = TSB(in_channels*2, out_channels) 
-        self.gn = nn.GroupNorm(num_channels=out_channels, 
-                               num_groups=out_channels, affine=False)
 
-    def forward(self, X): 
-        x_1 = self.branch_1(X)
-        x_2 = self.branch_2(X) 
+        seq = x.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
 
-        fusion = x_1 + x_2 - x_1 * x_2 
 
-        out = self.tsb(fusion) 
-        out = self.gn(out) 
+        norm_fwd = self.pre_norm(seq) 
+        forward_states = self.mamba(norm_fwd) + seq
 
-        return out  
+        rev_seq = torch.flip(seq, dims=[1])
+        norm_rev = self.rev_pre_norm(rev_seq)
+        backward_states = self.mamba2(norm_rev) + rev_seq
+
+        backward_states = torch.flip(backward_states, dims=[1])
+
+       
+        merged = self.merge(torch.cat((forward_states, backward_states), dim=-1)) 
+
+        merged = self.post_norm(merged)
+
+
+        out = merged.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()
+        return out
