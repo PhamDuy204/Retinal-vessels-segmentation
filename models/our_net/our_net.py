@@ -6,7 +6,7 @@ from bottle_neck import *
 
 class SegModel(nn.Module):
     def __init__(self, in_channels,out_channels):
-        super().__init__()
+        super().__init__() 
         self.out_channels=out_channels
         # self.eps = 1e-7
         self.first_conv=nn.Conv2d(in_channels,4,1,bias=False)
