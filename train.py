@@ -16,6 +16,8 @@ from torch.multiprocessing import Process, Queue
 from load_model import load_model_class,load_loss_class
 import wandb
 import math
+
+from adabelief_pytorch import AdaBelief
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=4)
@@ -154,14 +156,14 @@ class Trainer:
                 if scores[method]>best_eval_score[best_method]:
                     best_eval_score[best_method]=scores[method]
             avg_metric = (acc + f1 + iou + recall + spe + auc+dice) / 7
-            best_metric_eval = (f1 + iou+auc)/3
+            best_metric_eval = (f1 + recall+auc+acc)/4
             with open("temp.log", "a") as f:
                 f.write(
                     f"[Epoch {e+1}/{epochs}] Dataset: {self.name} | "
                     f"Loss: {training_loss:.4f} | "
                     f"Acc: {acc:.4f} | F1: {f1:.4f} | IoU: {iou:.4f} | "
                     f"Recall: {recall:.4f} | Specificity: {spe:.4f} | "
-                    f"DiceScore: {dice:.4f}\n"
+                    f"DiceScore: {dice:.4f} | AUC: {auc:.4f}\n"
                 )
             wandb.log({
                 "epoch": e+1,
@@ -275,7 +277,7 @@ class Trainer:
                         h,w = ex_mask.shape[-2:]
                         ex_pred_mask=ex_pred_mask[:,:,:h,:w]
                         ex_image=ex_image[:,:,:h,:w]
-                    ex_pred_mask=torch.where(ex_pred_mask>=0.485,1,0)
+                    ex_pred_mask=torch.where(ex_pred_mask>=0.487,1,0)
                     # print(ex_pred_mask.shape)
                     # print(ex_image.shape)
                     for i in range(len(ex_image)):
@@ -349,6 +351,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         #     _=model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
         # model.zero_grad()
         num_params=count_trainable_params(model)
+        print(num_params)
         model_class_name = type(model).__name__
         timestamp = datetime.now().strftime('%Y%m%d_%H')
         try:
@@ -360,6 +363,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                         "dataset": name,
                         "model": model_class_name,
                         "batch_size": args.batch_size,
+                        "num_p": num_params,
                         "num_patch": None if ~patch else args.patch_size,
                         'type_split': None if ~patch else args.type_split,
                         "optimizer": "Adam",

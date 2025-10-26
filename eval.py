@@ -87,7 +87,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
             # print(mask.dtype)
             # print(prob.dtype)
 
-            pred_mask = torch.where(prob_1>=0.485,1,0)
+            pred_mask = torch.where(prob_1>=0.487,1,0)
 
             acc_metric.update(pred_mask, mask)
             f1_metric.update(pred_mask, mask)
