@@ -184,9 +184,9 @@ class shallow_fea_fusion(nn.Module):
         fea = self.conv1x1(fea)
         return fea
 
-class U_Net(nn.Module):
+class SegModel(nn.Module):
     def __init__(self, in_c, n_classes):
-        super(U_Net, self).__init__()
+        super(SegModel, self).__init__()
         self.n_classes = n_classes
         self.Maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
 
