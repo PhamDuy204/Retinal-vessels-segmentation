@@ -153,7 +153,7 @@ class AG(nn.Module):
 
         self.final_merge = nn.Sequential(
             nn.Conv2d(2 * in_channels, in_channels, 3, padding='same', bias=False),
-            nn.GroupNorm(8, in_channels, affine=False), # Giữ nguyên GroupNorm
+            nn.GroupNorm(8, in_channels, affine=False), 
             nn.ReLU(),
         )
         
@@ -161,11 +161,10 @@ class AG(nn.Module):
         self.map = nn.AdaptiveMaxPool2d(1)
 
     def forward(self, x_e, x_u):
-        b, c, h, w = x_e.shape
 
         gconv_x_u = self.gconv_x_u(x_u)
         gconv_x_e = self.gconv_x_e(x_e)
-        merge = self.fuse_gconv(torch.cat((gconv_x_u, gconv_x_e), 1)) # (b, c, h, w)
+        merge = self.fuse_gconv(torch.cat([gconv_x_u, gconv_x_e], dim=1)) # (b, c, h, w)
 
         gap_x_m = self.gap(merge)
         map_m = self.map(merge)
@@ -174,7 +173,7 @@ class AG(nn.Module):
         map_e = self.map(x_e)
         map_x_u = self.map(x_u)
 
-        global_context = torch.cat((gap_x_e, map_e, gap_x_u, map_x_u, gap_x_m, map_m), 1)
+        global_context = torch.cat([gap_x_e, map_e, gap_x_u, map_x_u, gap_x_m, map_m], dim=1)
         
         channel_weights = self.channel_attention(global_context)
         
