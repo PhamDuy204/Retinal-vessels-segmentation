@@ -1,265 +1,240 @@
-# coding=utf-8
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-import copy
-import logging
-import math
-
-from os.path import join as pjoin
-
 import torch
-import torch.nn as nn
 import numpy as np
+from torch import nn
+from PIL import Image
+from torch.autograd import Variable
+import torch.nn.functional as F
 
-from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
+def edge_conv2d(im):
+    # 用nn.Conv2d定义卷积操作
+    conv_op = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype='float32')
+    sobel_kernel = sobel_kernel.reshape((1, 1, 3, 3))
+    sobel_kernel = np.repeat(sobel_kernel, 3, axis=1)
+    sobel_kernel = np.repeat(sobel_kernel, 3, axis=0)
+    conv_op.weight.data = torch.from_numpy(sobel_kernel).cuda()
+    edge_detect = torch.abs(conv_op(Variable(im)))
 
-from scipy import ndimage
+    conv_op1 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel1 = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    sobel_kernel1 = sobel_kernel1.reshape((1, 1, 3, 3))
+    sobel_kernel1 = np.repeat(sobel_kernel1, 3, axis=1)
+    sobel_kernel1 = np.repeat(sobel_kernel1, 3, axis=0)
+    conv_op1.weight.data = torch.from_numpy(sobel_kernel1).cuda()
+    edge_detect1 = torch.abs(conv_op1(Variable(im)))
 
+    conv_op2 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel2 = np.array([[2, 1, 0], [1, 0, -1], [0, -1, -2]], dtype='float32')
+    sobel_kernel2 = sobel_kernel2.reshape((1, 1, 3, 3))
+    sobel_kernel2 = np.repeat(sobel_kernel2, 3, axis=1)
+    sobel_kernel2 = np.repeat(sobel_kernel2, 3, axis=0)
+    conv_op2.weight.data = torch.from_numpy(sobel_kernel2).cuda()
+    edge_detect2 = torch.abs(conv_op2(Variable(im)))
 
-def swish(x):
-    return x * torch.sigmoid(x)
+    conv_op3 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel3 = np.array([[0, -1, -2], [1, 0, -1], [2, 1, 0]], dtype='float32')
+    sobel_kernel3 = sobel_kernel3.reshape((1, 1, 3, 3))
+    sobel_kernel3 = np.repeat(sobel_kernel3, 3, axis=1)
+    sobel_kernel3 = np.repeat(sobel_kernel3, 3, axis=0)
+    conv_op3.weight.data = torch.from_numpy(sobel_kernel3).cuda()
+    edge_detect3 = torch.abs(conv_op3(Variable(im)))
+    # print(conv_op.weight.size())
+    # print(conv_op, '\n')
 
+    sobel_out = edge_detect+edge_detect1+edge_detect2+edge_detect3
 
-ACT2FN = {"gelu": torch.nn.functional.gelu, "relu": torch.nn.functional.relu, "swish": swish}
+    return sobel_out
 
-class Attention(nn.Module):
-    def __init__(self, config, vis):
-        super(Attention, self).__init__()
-        self.vis = vis
-        self.num_attention_heads = config.transformer["num_heads"]
-        self.attention_head_size = int(config.hidden_size / self.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
+def edge_conv2d64(im):
+    # 用nn.Conv2d定义卷积操作
+    conv_op = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype='float32')
+    sobel_kernel = sobel_kernel.reshape((1, 1, 3, 3))
+    sobel_kernel = np.repeat(sobel_kernel, 64, axis=1)
+    sobel_kernel = np.repeat(sobel_kernel, 64, axis=0)
+    conv_op.weight.data = torch.from_numpy(sobel_kernel).cuda()
+    edge_detect = torch.abs(conv_op(Variable(im)))
 
-        self.query = Linear(config.hidden_size, self.all_head_size)
-        self.key = Linear(config.hidden_size, self.all_head_size)
-        self.value = Linear(config.hidden_size, self.all_head_size)
+    conv_op1 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel1 = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    sobel_kernel1 = sobel_kernel1.reshape((1, 1, 3, 3))
+    sobel_kernel1 = np.repeat(sobel_kernel1, 64, axis=1)
+    sobel_kernel1 = np.repeat(sobel_kernel1, 64, axis=0)
+    conv_op1.weight.data = torch.from_numpy(sobel_kernel1).cuda()
+    edge_detect1 = torch.abs(conv_op1(Variable(im)))
 
-        self.out = Linear(config.hidden_size, config.hidden_size)
-        self.attn_dropout = Dropout(config.transformer["attention_dropout_rate"])
-        self.proj_dropout = Dropout(config.transformer["attention_dropout_rate"])
+    conv_op2 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel2 = np.array([[2, 1, 0], [1, 0, -1], [0, -1, -2]], dtype='float32')
+    sobel_kernel2 = sobel_kernel2.reshape((1, 1, 3, 3))
+    sobel_kernel2 = np.repeat(sobel_kernel2, 64, axis=1)
+    sobel_kernel2 = np.repeat(sobel_kernel2, 64, axis=0)
+    conv_op2.weight.data = torch.from_numpy(sobel_kernel2).cuda()
+    edge_detect2 = torch.abs(conv_op2(Variable(im)))
 
-        self.softmax = Softmax(dim=-1)
+    conv_op3 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel3 = np.array([[0, -1, -2], [1, 0, -1], [2, 1, 0]], dtype='float32')
+    sobel_kernel3 = sobel_kernel3.reshape((1, 1, 3, 3))
+    sobel_kernel3 = np.repeat(sobel_kernel3, 64, axis=1)
+    sobel_kernel3 = np.repeat(sobel_kernel3, 64, axis=0)
+    conv_op3.weight.data = torch.from_numpy(sobel_kernel3).cuda()
+    edge_detect3 = torch.abs(conv_op3(Variable(im)))
+    # print(conv_op.weight.size())
+    # print(conv_op, '\n')
 
-    def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
+    sobel_out = edge_detect+edge_detect1+edge_detect2+edge_detect3
 
-    def forward(self, hidden_states):
-        mixed_query_layer = self.query(hidden_states)
-        mixed_key_layer = self.key(hidden_states)
-        mixed_value_layer = self.value(hidden_states)
+    return sobel_out
 
-        query_layer = self.transpose_for_scores(mixed_query_layer)
-        key_layer = self.transpose_for_scores(mixed_key_layer)
-        value_layer = self.transpose_for_scores(mixed_value_layer)
+def edge_conv2d128(im):
+    # 用nn.Conv2d定义卷积操作
+    conv_op = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype='float32')
+    sobel_kernel = sobel_kernel.reshape((1, 1, 3, 3))
+    sobel_kernel = np.repeat(sobel_kernel, 128, axis=1)
+    sobel_kernel = np.repeat(sobel_kernel, 128, axis=0)
+    conv_op.weight.data = torch.from_numpy(sobel_kernel).cuda()
+    edge_detect = torch.abs(conv_op(Variable(im)))
 
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        attention_probs = self.softmax(attention_scores)
-        weights = attention_probs if self.vis else None
-        attention_probs = self.attn_dropout(attention_probs)
+    conv_op1 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel1 = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    sobel_kernel1 = sobel_kernel1.reshape((1, 1, 3, 3))
+    sobel_kernel1 = np.repeat(sobel_kernel1, 128, axis=1)
+    sobel_kernel1 = np.repeat(sobel_kernel1, 128, axis=0)
+    conv_op1.weight.data = torch.from_numpy(sobel_kernel1).cuda()
+    edge_detect1 = torch.abs(conv_op1(Variable(im)))
 
-        context_layer = torch.matmul(attention_probs, value_layer)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)
-        attention_output = self.out(context_layer)
-        attention_output = self.proj_dropout(attention_output)
-        return attention_output, weights
+    conv_op2 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel2 = np.array([[2, 1, 0], [1, 0, -1], [0, -1, -2]], dtype='float32')
+    sobel_kernel2 = sobel_kernel2.reshape((1, 1, 3, 3))
+    sobel_kernel2 = np.repeat(sobel_kernel2, 128, axis=1)
+    sobel_kernel2 = np.repeat(sobel_kernel2, 128, axis=0)
+    conv_op2.weight.data = torch.from_numpy(sobel_kernel2).cuda()
+    edge_detect2 = torch.abs(conv_op2(Variable(im)))
 
+    conv_op3 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel3 = np.array([[0, -1, -2], [1, 0, -1], [2, 1, 0]], dtype='float32')
+    sobel_kernel3 = sobel_kernel3.reshape((1, 1, 3, 3))
+    sobel_kernel3 = np.repeat(sobel_kernel3, 128, axis=1)
+    sobel_kernel3 = np.repeat(sobel_kernel3, 128, axis=0)
+    conv_op3.weight.data = torch.from_numpy(sobel_kernel3).cuda()
+    edge_detect3 = torch.abs(conv_op3(Variable(im)))
+    # print(conv_op.weight.size())
+    # print(conv_op, '\n')
 
-class Mlp(nn.Module):
-    def __init__(self, config):
-        super(Mlp, self).__init__()
-        self.fc1 = Linear(config.hidden_size, config.transformer["mlp_dim"])
-        self.fc2 = Linear(config.transformer["mlp_dim"], config.hidden_size)
-        self.act_fn = ACT2FN["gelu"]
-        self.dropout = Dropout(config.transformer["dropout_rate"])
+    sobel_out = edge_detect+edge_detect1+edge_detect2+edge_detect3
 
-        self._init_weights()
+    return sobel_out
 
-    def _init_weights(self):
-        nn.init.xavier_uniform_(self.fc1.weight)
-        nn.init.xavier_uniform_(self.fc2.weight)
-        nn.init.normal_(self.fc1.bias, std=1e-6)
-        nn.init.normal_(self.fc2.bias, std=1e-6)
+def edge_conv2d256(im):
+    # 用nn.Conv2d定义卷积操作
+    conv_op = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype='float32')
+    sobel_kernel = sobel_kernel.reshape((1, 1, 3, 3))
+    sobel_kernel = np.repeat(sobel_kernel, 256, axis=1)
+    sobel_kernel = np.repeat(sobel_kernel, 256, axis=0)
+    conv_op.weight.data = torch.from_numpy(sobel_kernel).cuda()
+    edge_detect = torch.abs(conv_op(Variable(im)))
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act_fn(x)
-        x = self.dropout(x)
-        x = self.fc2(x)
-        x = self.dropout(x)
-        return x
+    conv_op1 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel1 = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    sobel_kernel1 = sobel_kernel1.reshape((1, 1, 3, 3))
+    sobel_kernel1 = np.repeat(sobel_kernel1, 256, axis=1)
+    sobel_kernel1 = np.repeat(sobel_kernel1, 256, axis=0)
+    conv_op1.weight.data = torch.from_numpy(sobel_kernel1).cuda()
+    edge_detect1 = torch.abs(conv_op1(Variable(im)))
 
-class up_conv(nn.Module):
-    def __init__(self, ch_in, ch_out):
-        super(up_conv, self).__init__()
-        self.up = nn.Sequential(
-            nn.Upsample(scale_factor=2),
-            nn.Conv2d(ch_in, ch_out, kernel_size=3, stride=1, padding=1, bias=True),
-            nn.BatchNorm2d(ch_out),
-            nn.ReLU(inplace=True)
-        )
+    conv_op2 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel2 = np.array([[2, 1, 0], [1, 0, -1], [0, -1, -2]], dtype='float32')
+    sobel_kernel2 = sobel_kernel2.reshape((1, 1, 3, 3))
+    sobel_kernel2 = np.repeat(sobel_kernel2, 256, axis=1)
+    #sobel_kernel2 = np.repeat(sobel_kernel2, 256, axis=0)
+    conv_op2.weight.data = torch.from_numpy(sobel_kernel2).cuda()
+    edge_detect2 = torch.abs(conv_op2(Variable(im)))
 
-    def forward(self, x):
-        x = self.up(x)
-        return x
+    conv_op3 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel3 = np.array([[0, -1, -2], [1, 0, -1], [2, 1, 0]], dtype='float32')
+    sobel_kernel3 = sobel_kernel3.reshape((1, 1, 3, 3))
+    sobel_kernel3 = np.repeat(sobel_kernel3, 256, axis=1)
+    sobel_kernel3 = np.repeat(sobel_kernel3, 256, axis=0)
+    conv_op3.weight.data = torch.from_numpy(sobel_kernel3).cuda()
+    edge_detect3 = torch.abs(conv_op3(Variable(im)))
+    # print(conv_op.weight.size())
+    # print(conv_op, '\n')
 
-class Embeddings(nn.Module):
-    """Construct the embeddings from patch, position embeddings.
-    """
-    def __init__(self, config, img_size, in_channels=256):
-        super(Embeddings, self).__init__()
-        self.hybrid = None
-        self.config = config
-        img_size = (128,128)
+    sobel_out = edge_detect+edge_detect1+edge_detect2+edge_detect3
 
-
-        patch_size = (2,2)
-        n_patches = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1])
-
-        self.hybrid = False
-
-        self.patch_embeddings = Conv2d(in_channels=in_channels,
-                                       out_channels=config.hidden_size,
-                                       kernel_size=patch_size,
-                                       stride=patch_size)
-
-        self.position_embeddings = nn.Parameter(torch.zeros(1, n_patches, config.hidden_size))
-
-        self.dropout = Dropout(config.transformer["dropout_rate"])
-
-
-    def forward(self, x):
-        if self.hybrid:
-            x, features = self.hybrid_model(x)
-        else:
-            features = None
-        x = self.patch_embeddings(x)  # (B, hidden. n_patches^(1/2), n_patches^(1/2))
-        x = x.flatten(2)
-        x = x.transpose(-1, -2)  # (B, n_patches, hidden)
-
-        embeddings = x + self.position_embeddings
-        embeddings = self.dropout(embeddings)
-        return embeddings, features
-
-
-class Block(nn.Module):
-    def __init__(self, config, vis):
-        super(Block, self).__init__()
-        self.hidden_size = config.hidden_size
-        self.attention_norm = LayerNorm(config.hidden_size, eps=1e-6)
-        self.ffn_norm = LayerNorm(config.hidden_size, eps=1e-6)
-        self.ffn = Mlp(config)
-        self.attn = Attention(config, vis)
-
-    def forward(self, x):
-        h = x
-        x = self.attention_norm(x)
-        x, weights = self.attn(x)
-        x = x + h
-
-        h = x
-        x = self.ffn_norm(x)
-        x = self.ffn(x)
-        x = x + h
-        return x, weights
-
-
-class Encoder(nn.Module):
-    def __init__(self, config, vis):
-        super(Encoder, self).__init__()
-        self.vis = vis
-        self.layer = nn.ModuleList()
-        self.encoder_norm = LayerNorm(config.hidden_size, eps=1e-6)
-        for _ in range(config.transformer["num_layers"]):
-            layer = Block(config, vis)
-            self.layer.append(copy.deepcopy(layer))
-
-    def forward(self, hidden_states):
-        attn_weights = []
-        for layer_block in self.layer:
-            hidden_states, weights = layer_block(hidden_states)
-            if self.vis:
-                attn_weights.append(weights)
-        encoded = self.encoder_norm(hidden_states)
-        return encoded, attn_weights
+    return sobel_out
 
 
-class Transformer(nn.Module):
-    def __init__(self, config, img_size, vis):
-        super(Transformer, self).__init__()
-        self.embeddings = Embeddings(config, img_size=img_size)
-        self.encoder = Encoder(config, vis)
 
-    def forward(self, input_ids):
-        embedding_output, features = self.embeddings(input_ids)
-        encoded, attn_weights = self.encoder(embedding_output)  # (B, n_patch, hidden)
-        return encoded, attn_weights, features
+# def edge_conv2d_2(im):
+#     # 用nn.Conv2d定义卷积操作
+#     conv_op = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+#     sobel_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype='float32')
+#     sobel_kernel = sobel_kernel.reshape((1, 1, 3, 3))
+#     sobel_kernel = np.repeat(sobel_kernel, 512, axis=1)
+#     sobel_kernel = np.repeat(sobel_kernel, 512, axis=0)
+#     conv_op.weight.data = torch.from_numpy(sobel_kernel).cuda()
+#     edge_detect = torch.abs(conv_op(Variable(im)))
 
+#     conv_op1 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+#     sobel_kernel1 = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+#     sobel_kernel1 = sobel_kernel1.reshape((1, 1, 3, 3))
+#     sobel_kernel1 = np.repeat(sobel_kernel1, 512, axis=1)
+#     sobel_kernel1 = np.repeat(sobel_kernel1, 512, axis=0)
+#     conv_op1.weight.data = torch.from_numpy(sobel_kernel1).cuda()
+#     edge_detect1 = torch.abs(conv_op1(Variable(im)))
 
-class Conv2dReLU(nn.Sequential):
-    def __init__(
-            self,
-            in_channels,
-            out_channels,
-            kernel_size,
-            padding=0,
-            stride=1,
-            use_batchnorm=True,
-    ):
-        conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            stride=stride,
-            padding=padding,
-            bias=not (use_batchnorm),
-        )
-        relu = nn.ReLU(inplace=True)
+#     conv_op2 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+#     sobel_kernel2 = np.array([[2, 1, 0], [1, 0, -1], [0, -1, -2]], dtype='float32')
+#     sobel_kernel2 = sobel_kernel2.reshape((1, 1, 3, 3))
+#     sobel_kernel2 = np.repeat(sobel_kernel2, 512, axis=1)
+#     sobel_kernel2 = np.repeat(sobel_kernel2, 512, axis=0)
+#     conv_op2.weight.data = torch.from_numpy(sobel_kernel2).cuda()
+#     edge_detect2 = torch.abs(conv_op2(Variable(im)))
 
-        bn = nn.BatchNorm2d(out_channels)
+#     conv_op3 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+#     sobel_kernel3 = np.array([[0, -1, -2], [1, 0, -1], [2, 1, 0]], dtype='float32')
+#     sobel_kernel3 = sobel_kernel3.reshape((1, 1, 3, 3))
+#     sobel_kernel3 = np.repeat(sobel_kernel3, 512, axis=1)
+#     sobel_kernel3 = np.repeat(sobel_kernel3, 512, axis=0)
+#     conv_op3.weight.data = torch.from_numpy(sobel_kernel3).cuda()
+#     edge_detect3 = torch.abs(conv_op3(Variable(im)))
+#     # print(conv_op.weight.size())
+#     # print(conv_op, '\n')
 
-        super(Conv2dReLU, self).__init__(conv, bn, relu)
+#     sobel_out = edge_detect+edge_detect1+edge_detect2+edge_detect3
 
+#     return sobel_out
 
-class DecoderCup(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        head_channels = 512
-        self.conv_more = Conv2dReLU(
-            config.hidden_size,
-            head_channels,
-            kernel_size=3,
-            padding=1,
-            use_batchnorm=True,
-        )
+def Gedge_map(im):
+    # 用nn.Conv2d定义卷积操作
+    conv_op = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype='float32')
+    sobel_kernel = sobel_kernel.reshape((1, 1, 3, 3))
+    conv_op.weight.data = torch.from_numpy(sobel_kernel).cuda()
+    edge_detect = torch.abs(conv_op(Variable(im)))
 
-    def forward(self, hidden_states, features=None):
-        B, n_patch, hidden = hidden_states.size()  # reshape from (B, n_patch, hidden) to (B, h, w, hidden)
-        h, w = int(np.sqrt(n_patch)), int(np.sqrt(n_patch))
-        x = hidden_states.permute(0, 2, 1)
-        x = x.contiguous().view(B, hidden, h, w)
-        x = self.conv_more(x)
-        return x
+    conv_op1 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel1 = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    sobel_kernel1 = sobel_kernel1.reshape((1, 1, 3, 3))
+    conv_op1.weight.data = torch.from_numpy(sobel_kernel1).cuda()
+    edge_detect1 = torch.abs(conv_op1(Variable(im)))
 
+    conv_op2 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel2 = np.array([[2, 1, 0], [1, 0, -1], [0, -1, -2]], dtype='float32')
+    sobel_kernel2 = sobel_kernel2.reshape((1, 1, 3, 3))
+    conv_op2.weight.data = torch.from_numpy(sobel_kernel2).cuda()
+    edge_detect2 = torch.abs(conv_op2(Variable(im)))
 
-class VisionTransformer(nn.Module):
-    def __init__(self, config, img_size=128, vis=False):
-        super(VisionTransformer, self).__init__()
-        self.transformer = Transformer(config, img_size, vis)
-        self.decoder = DecoderCup(config)
-        self.config = config
+    conv_op3 = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+    sobel_kernel3 = np.array([[0, -1, -2], [1, 0, -1], [2, 1, 0]], dtype='float32')
+    sobel_kernel3 = sobel_kernel3.reshape((1, 1, 3, 3))
+    conv_op3.weight.data = torch.from_numpy(sobel_kernel3).cuda()
+    edge_detect3 = torch.abs(conv_op3(Variable(im)))
+    # print(conv_op.weight.size())
+    # print(conv_op, '\n')
 
-    def forward(self, x):
-        if x.size()[1] == 1:
-            x = x.repeat(1,3,1,1)
-        x, attn_weights, features = self.transformer(x)  # (B, n_patch, hidden)
+    sobel_out = edge_detect+edge_detect1+edge_detect2+edge_detect3
 
-        x = self.decoder(x, features)
-        return x
+    return sobel_out

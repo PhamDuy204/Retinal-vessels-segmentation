@@ -15,7 +15,7 @@ def get_b16_config():
     config.classifier = 'seg'
     config.representation_size = None
     config.resnet_pretrained_path = None
-    config.pretrained_path = '../model/vit_checkpoint/imagenet21k/ViT-B_16.npz'
+    # config.pretrained_path = '../model/vit_checkpoint/imagenet21k/ViT-B_16.npz'
     config.patch_size = 16
 
     config.decoder_channels = (256, 128, 64, 16)
@@ -124,7 +124,7 @@ def get_h14_config():
     config.transformer.num_layers = 32
     config.transformer.attention_dropout_rate = 0.0
     config.transformer.dropout_rate = 0.1
-    config.classifier = 'token'
+    config.classifier = 'seg'
     config.representation_size = None
 
     return config

@@ -116,9 +116,9 @@ class Embeddings(nn.Module):
         super(Embeddings, self).__init__()
         self.hybrid = None
         self.config = config
-        img_size = (128,128)
-
-
+        if isinstance(img_size, int):
+            img_size = (img_size, img_size) # Chuyển 16 thành (16, 16)
+            
         patch_size = (2,2)
         n_patches = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1])
 

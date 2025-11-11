@@ -7,6 +7,10 @@ Created on Thu Jan  9 23:05:23 2020
 @author: zhang
 """
 
+import sys 
+import os 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import torch.nn as nn
 import torch
 from functools import partial
@@ -91,6 +95,8 @@ class up_conv4(nn.Module):
 class local_attention(nn.Module):
     def __init__(self, channel):
         super(local_attention, self).__init__()
+
+
         self.dilate1 = nn.Conv2d(channel, channel // 2, kernel_size=3, dilation=1, padding=1)
         self.dilate2 = nn.Conv2d(channel//2, channel // 2, kernel_size=3, dilation=3, padding=3)
         self.dilate3 = nn.Conv2d(channel//2, channel // 2, kernel_size=3, dilation=5, padding=5)
@@ -98,10 +104,14 @@ class local_attention(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.u1 = torch.nn.Parameter(torch.ones((1,1), dtype = torch.float32))
         self.u2 = torch.nn.Parameter(torch.ones((1,1), dtype = torch.float32))
+
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
                 if m.bias is not None:
                     m.bias.data.zero_()
+
+
         self.psi = nn.Sequential(
             nn.Conv2d(channel // 2, 1, kernel_size=1,stride=1,padding=0,bias=True),
             nn.BatchNorm2d(1),
@@ -132,7 +142,7 @@ class local_attention(nn.Module):
 
         fea = fea1+fea2+fea3
 
-        edgemap = self.relu(Gedge_map(self.psi(fea))+self.psi(fea))
+        edgemap = self.relu(Gedge_map(self.psi(fea))+self.psi(fea)) # ??? Gedge_map co phai tu fea? 
 
         x = x*edgemap
         b, c, _, _ = x.size()
@@ -213,7 +223,7 @@ class SegModel(nn.Module):
         self.fconv = nn.Conv2d(1, 1, kernel_size=1, stride=1, padding=0)
 
         self.shallow_fusion = shallow_fea_fusion(F_g=64,F_l=64,F_int=64)
-        self.Trans = VisionTransformer(get_b16_config())
+        self.Trans = VisionTransformer(get_b16_config(), img_size=16)
 
     def forward(self, x):
         x1 = self.Conv1(x) 
@@ -229,6 +239,7 @@ class SegModel(nn.Module):
 
         d4 = self.Up4(x4)
         lt2 = self.l_at4(x3)
+
         x3 = lt2
         d4 = torch.cat((x3, d4), dim=1)
         d4 = self.Up_conv4(d4)
