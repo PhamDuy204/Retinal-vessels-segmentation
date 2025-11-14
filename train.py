@@ -17,7 +17,7 @@ from load_model import load_model_class,load_loss_class
 import wandb
 import math
 
-from adabelief_pytorch import AdaBelief
+# from adabelief_pytorch import AdaBelief
 set_seed(42)
 parser = argparse.ArgumentParser(description="Input params")
 parser.add_argument("-b", "--batch_size",type=int, default=4)
@@ -56,6 +56,14 @@ class Trainer:
         self.patch=patch
         self.type_split=type_split
     def train(self,epochs=100):
+        artifact = wandb.Artifact(name=f"{args.model}_{self.name}_pt", type="model")
+
+        save_model_folder_path=os.path.join(os.path.dirname(__file__),f'models/{args.model}/')
+        artifact.add_file(os.path.join(os.path.dirname(__file__),f'loss/{args.loss}.py'))
+        artifact.add_file(os.path.join(os.path.dirname(__file__),f'train.py'))
+        artifact.add_file(os.path.join(os.path.dirname(__file__),f'utils.py'))
+        artifact.add_dir(save_model_folder_path)
+        wandb.save(save_model_folder_path)
         torch.cuda.set_device(self.gpu_id)
         self.model.cuda()
 
@@ -197,13 +205,9 @@ class Trainer:
                 save_model_folder_path=os.path.join(os.path.dirname(__file__),f'models/{args.model}/')
                 torch.save(best_model, save_path)
 
-                artifact = wandb.Artifact(name=f"{args.model}_{self.name}_pt", type="model")
                 artifact.add_file(save_path)
-                artifact.add_file(os.path.join(os.path.dirname(__file__),f'loss/{args.loss}.py'))
-                artifact.add_dir(save_model_folder_path)
                 wandb.log_artifact(artifact)
                 wandb.save(save_path)
-                wandb.save(save_model_folder_path)
                 with torch.inference_mode():                                                                                                                                                        
                     ex_image,ex_mask,ex_edge = next(iter(self.val_loader)).values()
 
@@ -375,8 +379,8 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                 )
 
             criterion = load_loss_class(args.loss)()
-            optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=2e-7)
+            optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=3e-5)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=3e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
                 model, train_loader, val_loader,

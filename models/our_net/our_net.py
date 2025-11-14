@@ -9,32 +9,29 @@ class SegModel(nn.Module):
         super().__init__()
         self.out_channels=out_channels
         # self.eps = 1e-7
-        self.down_0=down_sampling(in_channels,16,(64,64)) #B,64,32,32
-        self.down_1=down_sampling(16,32,(32,32)) #B,128,16,16
+        self.down_0=down_sampling(in_channels,32,(64,64)) #B,64,32,32
+        self.down_1=down_sampling(32,32,(32,32)) #B,128,16,16
         self.down_2=down_sampling(32,32,(16,16))#B,256,8,8
-        self.bneck=nn.Sequential(MAB(32),BottleNeck(32,32),BottleNeck_2(32),CAB(32))
+        self.bneck=nn.Sequential(CAB_1(32),BottleNeck_2(32),MAB(32,(8,8)),CAB(32))
         self.up_0=up_sampling(32,32,32,(16,16)) #B,64,32,32
         self.up_1=up_sampling(32,32,32,(32,32)) #B,128,16,16
         
-        self.up_2=up_sampling(32,32,16,(64,64))#B,256,8,8
+        self.up_2=up_sampling(32,32,32,(64,64))#B,256,8,8
         self.sig=nn.Identity()
         self.out=nn.Sequential(
-            nn.Conv2d(16,out_channels,1,bias=False),
+            ConvFunc(32),
+            nn.Conv2d(32,out_channels,1,bias=False),
         )
         self.up_f_0=nn.Sequential(
-            UpFunc(32,32*out_channels,4),
-            MKIR(32*out_channels,32*out_channels),
-            nn.Conv2d(32*out_channels,32*out_channels,3,padding='same',groups=32*out_channels,bias=False),
-            MAB(32*out_channels),
-            nn.Conv2d(32*out_channels,out_channels,1,bias=False)
+            UpFunc(32,32,4),
+            ConvFunc(32),
+            nn.Conv2d(32,out_channels,1,bias=False)
             # nn.Sigmoid()
         )
         self.up_f_1=nn.Sequential(
-            UpFunc(32,32*out_channels,2),
-            MKIR(32*out_channels,32*out_channels),
-            MAB(32*out_channels),
-            nn.Conv2d(32*out_channels,32*out_channels,3,padding='same',groups=32*out_channels,bias=False),
-            nn.Conv2d(32*out_channels,out_channels,1,bias=False)
+            UpFunc(32,32,2),
+            ConvFunc(32),
+            nn.Conv2d(32,out_channels,1,bias=False)
             # nn.Sigmoid()
         )
         self.map=nn.AdaptiveAvgPool2d(1)

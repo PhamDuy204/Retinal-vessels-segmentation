@@ -29,14 +29,11 @@ def get_rmsnorm(dim: int):
 class CAB(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.pre_norm = nn.GroupNorm(safe_group(in_channels, 8), in_channels, affine=True)
-
-        self.norm_k = nn.LayerNorm(in_channels)
-        self.norm_q = nn.LayerNorm(in_channels)
         self.q = nn.Conv2d(in_channels, in_channels, 1, bias=False)
         self.k = nn.Conv2d(in_channels, in_channels, 1, bias=False)
         self.v = nn.Conv2d(in_channels, in_channels, 1, bias=False)
         self.pj = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.out_norm = nn.GroupNorm(1,in_channels)
         mid = max(in_channels * 2, 16)
         self.ff = nn.Sequential(
             nn.Conv2d(in_channels, mid, 1, bias=False),
@@ -49,11 +46,10 @@ class CAB(nn.Module):
         x: (B, C, H, W)
         returns: (B, C, H, W) with residual
         """
-        b, c, h, w = x.shape
-        norm_x = self.pre_norm(x)              
-        q = self.q(norm_x)                      
-        k = self.k(norm_x)
-        v = self.v(norm_x)
+        b, c, h, w = x.shape      
+        q = self.q(x)                      
+        k = self.k(x)
+        v = self.v(x)
 
 
         N = h * w
@@ -62,22 +58,59 @@ class CAB(nn.Module):
         v_flat = v.permute(0, 2, 3, 1).contiguous().view(b, N, c)
 
 
-        qn = self.norm_q(q_flat)  
-        kn = self.norm_k(k_flat)
-
-
-        scale = torch.sqrt(torch.tensor(c, dtype=qn.dtype, device=qn.device))
-        attn_logits = torch.matmul(qn, kn.transpose(-1, -2)) / scale
+        scale = torch.sqrt(torch.tensor(c, dtype=q.dtype, device=q.device))
+        attn_logits = torch.matmul(q_flat, k_flat.transpose(-1, -2)) / scale
         attn = torch.softmax(attn_logits, dim=-1)  
-
-
         out_flat = torch.matmul(attn, v_flat) 
-
         out = out_flat.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()  
-        out = self.pj(out)  
-        ff_out = self.ff(out) 
+        out =  self.out_norm(self.pj(out)+x)
+        ff_out = self.ff(out)+out
 
-        return x + ff_out 
+        return ff_out
+
+
+class CAB_1(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.q = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.k = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.v = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.pj = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        self.out_norm = nn.GroupNorm(1,in_channels)
+        mid = max(in_channels * 2, 16)
+        self.ff = nn.Sequential(
+            nn.Conv2d(in_channels, mid, 1, bias=False),
+            nn.GELU(),
+            nn.Conv2d(mid, in_channels, 1, bias=False),
+        )
+
+    def forward(self, x):
+        """
+        x: (B, C, H, W)
+        returns: (B, C, H, W) with residual
+        """
+        b, c, h, w = x.shape      
+        q = self.q(x)                      
+        k = self.k(x)
+        v = self.v(x)
+
+        scale = torch.sqrt(torch.tensor(h, dtype=q.dtype, device=q.device))
+        attn_logits = F.sigmoid(torch.matmul(q, k.transpose(-1, -2))/ scale)
+
+        out = attn_logits*v
+
+        q = self.q(out)                      
+        k = self.k(out)
+        v = self.v(out)
+
+        attn_logits = F.sigmoid(torch.matmul(q, k.transpose(-1, -2)))
+
+        out = attn_logits*v
+
+        out =  self.out_norm(self.pj(out)+x)
+        ff_out = self.ff(out)+out
+
+        return ff_out 
 
 class TSB(nn.Module): 
     def __init__(self, in_channels, out_channels): 
@@ -206,12 +239,12 @@ class BottleNeck_2(nn.Module):
         self.rev_pre_norm = get_rmsnorm(dimension)
         self.post_norm = get_rmsnorm(dimension)
 
-        self.mamba = Mamba2(dimension, 32, conv_bias=False, d_conv=4, expand=2,norm_before_gate=True)
+        self.mamba = Mamba2(dimension,32, conv_bias=True, d_conv=4, expand=2,norm_before_gate=True)
 
         self.out = nn.Sequential(
-            nn.Linear(dimension, max(dimension // 4, 8), bias=False),
+            nn.Linear(dimension, dimension, bias=False),
             nn.GELU(),
-            nn.Linear(max(dimension // 4, 8), dimension, bias=False),
+            nn.Linear(dimension, dimension, bias=False),
         )
 
     def forward(self, x: torch.Tensor):
