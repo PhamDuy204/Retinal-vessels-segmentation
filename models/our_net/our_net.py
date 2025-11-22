@@ -3,6 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
 from bottle_neck import *
+import random
 
 class SegModel(nn.Module):
     def __init__(self, in_channels,out_channels):
@@ -18,30 +19,36 @@ class SegModel(nn.Module):
         
         self.up_2=up_sampling(32,32,32,(64,64))#B,256,8,8
         self.sig=nn.Identity()
+        self.out_fut=nn.Sequential(
+            ConvFunc(32,with_activate=True),
+            nn.Conv2d(32,out_channels,1,bias=False),
+        )
         self.out=nn.Sequential(
-            ConvFunc(32),
+            ConvFunc(32,with_activate=True),
             nn.Conv2d(32,out_channels,1,bias=False),
         )
         self.up_f_0=nn.Sequential(
             UpFunc(32,32,4),
-            ConvFunc(32),
+            ConvFunc(32,with_activate=True),
             nn.Conv2d(32,out_channels,1,bias=False)
             # nn.Sigmoid()
         )
         self.up_f_1=nn.Sequential(
             UpFunc(32,32,2),
-            ConvFunc(32),
+            ConvFunc(32,with_activate=True),
             nn.Conv2d(32,out_channels,1,bias=False)
             # nn.Sigmoid()
         )
-        self.map=nn.AdaptiveAvgPool2d(1)
-        self.gap=nn.AdaptiveMaxPool2d(1)
-        self.awl=nn.Sequential(
-            nn.Conv2d(3*out_channels,48*out_channels,1,bias=False),
-            nn.GELU(),
-            nn.Conv2d(48*out_channels,3*out_channels,1,bias=False),
-            nn.Sigmoid()
-        )
+        self.swl=swl((64,64))
+        self._init_weights()    
+    def _init_weights(self):
+        # init conv đi qua Sigmoid
+        for layer in [self.out_fut, self.out, self.up_f_0, self.up_f_1]:
+            last_conv = layer[-1]  # conv cuối
+            if isinstance(last_conv, nn.Conv2d):
+                nn.init.xavier_uniform_(last_conv.weight)
+                if last_conv.bias is not None:
+                    nn.init.constant_(last_conv.bias, 0)
     def forward(self, x):
         b,c,h,width=x.shape
         x_0,down_0=self.down_0(x)
@@ -50,24 +57,17 @@ class SegModel(nn.Module):
         bneck=self.bneck(down_2)
         x_up_0,x_up_0_t=self.up_0(bneck,x_2,bneck) #B,256,16,16
         x_up_1,x_up_1_t=self.up_1(x_up_0,x_1,x_up_0_t) #B,128,32,32
-        x_up_2,_=self.up_2(x_up_1,x_0,x_up_1_t) #B,64,64,64
+        x_up_2,fut=self.up_2(x_up_1,x_0,x_up_1_t) #B,64,64,64
 
+        fut=self.out_fut(fut)
         out=self.out(x_up_2)
         out_1=self.up_f_1(x_up_1)
         out_0=self.up_f_0(x_up_0)
-
-        w=self.map(out)+self.gap(out)
-        w1=self.map(out_1)+self.gap(out_1)
-        w0=self.map(out_0)+self.gap(out_0)
-        cat_w=torch.cat((w,w1,w0),1)
-        computed_w=self.awl(cat_w)
-
-        merge_out=torch.cat((out,out_1,out_0),1)
         # print(merge_out.shape)
         # print(computed_w.shape)
-        final_out=((computed_w*merge_out).view(b,3,self.out_channels,h,width)).sum(dim=1)
-        
+        # final_out=((computed_w*merge_out).view(b,4,self.out_channels,h,width)).sum(dim=1)
+        final_out=self.swl(out,out_0,out_1,fut)
         final_out=self.sig(final_out)
         if self.training:
-           return final_out,self.sig(out),self.sig(out_1),self.sig(out_0)
+           return final_out,self.sig(out),self.sig(out_0),self.sig(out_1),self.sig(fut)
         return F.sigmoid(final_out)

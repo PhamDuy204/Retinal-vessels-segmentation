@@ -1,4 +1,3 @@
-
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -234,7 +233,7 @@ class BottleNeck(nn.Module):
 
 
 class BottleNeck_2(nn.Module):
-    def __init__(self, dimension, d_state=16):
+    def __init__(self, dimension, d_state=16,d_conv=4,norm_before_gate=True):
         super().__init__()
         self.rev_pre_norm = get_rmsnorm(dimension)
         self.post_norm = get_rmsnorm(dimension)
@@ -259,4 +258,4 @@ class BottleNeck_2(nn.Module):
         forward_states = self.mamba(seq) + seq    
         merged = self.out(forward_states)+forward_states
         out = merged.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()
-        return out  
+        return out

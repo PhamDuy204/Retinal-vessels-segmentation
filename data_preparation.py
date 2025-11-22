@@ -48,11 +48,11 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
             else:
                 if name not in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']:
                     all_custom_train_patch_datasets.append(
-                        CustomTrainDataset(os.path.join(data_paths,name,'training'),train_transforms,with_patches=patches,
+                        CustomTrainDataset(os.path.join(data_paths,name,'*'),train_transforms,with_patches=patches,
                                             num_patches=num_patches,patch_size=patch_size,type_split=type_split)
                     )
                     all_custom_test_patch_datasets.append(
-                        CustomTestDataset(os.path.join(data_paths,name,'test'),test_transforms,type_split=type_split))
+                        CustomTestDataset(os.path.join(data_paths,name,'*'),test_transforms,type_split=type_split))
                 
             train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)            
             val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)            
@@ -79,19 +79,22 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
                     'patches': False
                 })
     for i in range(len(all_custom_train_patch_datasets)):
-        train_set = ConcatDataset(all_custom_train_patch_datasets[i+1:]+all_custom_train_patch_datasets[0:i])
-        val_set = all_custom_test_patch_datasets[i]
-        name = val_set.get_name()
-        if name in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']:
-            continue
-        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)        
-        val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)        
-        all_train_methods.append({
-                'train_loader': train_loader,
-                'val_loader': val_loader,
-                'name': f'val_on_{name}_and_train_on_remaining_datasets_with_patches',
-                'patches': True
-            })
+        for j in range(len(all_custom_train_patch_datasets)):
+            if (i!=j) and (all_custom_train_patch_datasets[i].get_name()!='CHASEDB_1') and (all_custom_test_patch_datasets[j].get_name()!='CHASEDB_1'):
+                train_set = all_custom_train_patch_datasets[i]
+                val_set = all_custom_test_patch_datasets[j]
+                val_name = val_set.get_name()
+                train_name=train_set.get_name()
+                if (val_name in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']) or (train_name in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']) :
+                    continue
+                train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)        
+                val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)        
+                all_train_methods.append({
+                        'train_loader': train_loader,
+                        'val_loader': val_loader,
+                        'name': f'val_on_{val_name}_and_train_on_{train_name}_with_patches',
+                        'patches': True
+                    })
     if training_type=='all':
         return all_train_methods
     elif training_type=='normal':

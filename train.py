@@ -171,7 +171,7 @@ class Trainer:
                     f"Loss: {training_loss:.4f} | "
                     f"Acc: {acc:.4f} | F1: {f1:.4f} | IoU: {iou:.4f} | "
                     f"Recall: {recall:.4f} | Specificity: {spe:.4f} | "
-                    f"DiceScore: {dice:.4f} | AUC: {auc:.4f}\n"
+                    f"DiceScore: {dice:.4f} | AUC: {auc:.5f}\n"
                 )
             wandb.log({
                 "epoch": e+1,
@@ -345,12 +345,12 @@ def gpu_worker(gpu_id, task_queue, result_queue):
         patch = info['patches']
         seg_model=load_model_class(args.model)
         model = seg_model(1,1).cuda()
-        model.apply(init_weights_kaiming)
-        try:
-            for m in [model.awl, model.up_f_0[-1], model.up_f_1[-1]]:
-                m.apply(init_weights_xavier)
-        except:
-            pass
+        # model.apply(init_weights_kaiming)
+        # try:
+        #     for m in [model.out[-1],model.up_f_0[-1],model.out_fut[-1], model.up_f_1[-1]]:
+        #         m.apply(init_weights_xavier)
+        # except:
+        #     pass
         # if patch:
         #     _=model(torch.rand(1,1,args.patch_size,args.patch_size).cuda())
         # model.zero_grad()
@@ -379,7 +379,7 @@ def gpu_worker(gpu_id, task_queue, result_queue):
                 )
 
             criterion = load_loss_class(args.loss)()
-            optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate,weight_decay=3e-5)
+            optimizer = torch.optim.Adam(model.parameters(),lr=args.learning_rate)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs,eta_min=3e-6)
             # ----------------------------------------------------------------
             trainer = Trainer(
@@ -445,5 +445,3 @@ if __name__ == '__main__':
         print("=========================")
     else:
         print("Không có kết quả nào được trả về từ các process.")
-        
-            

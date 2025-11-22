@@ -33,7 +33,7 @@ def convert_gray(image,weigh=np.array([0.299, 0.587, 0.114])):
     gray_img = image*weigh
     return np.sum(gray_img,-1)
 
-def unsharp_mask(image, ksize=(5,5), sigma=1.0, amount=2):
+def unsharp_mask(image, ksize=(7,7), sigma=1.0, amount=2):
     blur = cv2.GaussianBlur(image, ksize, sigma)
     mask = cv2.subtract(image, blur)
     return cv2.addWeighted(image, 1.0, mask, amount, 0).clip(0,255)
@@ -61,7 +61,7 @@ def preprocessing_img(path):
     gray=((gray-np.min(gray))/(np.max(gray)-np.min(gray)))*255
     
     gray=clahe.apply(np.array(gray,dtype=np.uint8))
-    return unsharp_mask(apply_gamma_correction(gray,1.2))
+    return unsharp_mask(gray)
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:
@@ -154,5 +154,3 @@ def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
 def reverse_to_original_image(patches, original_size,patch_size,stride):
     original_image = kornia.contrib.combine_tensor_patches(patches, original_size=original_size,window_size=patch_size,stride=stride,allow_auto_unpadding=False)
     return original_image
-
-   
