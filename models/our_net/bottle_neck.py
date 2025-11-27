@@ -18,7 +18,7 @@ def safe_group(channels: int, preferred: int = 8) -> int:
             return g
     return 1
 
-def get_rmsnorm(dim: int):
+def get_rmsnorm(dim: int): 
     if hasattr(nn, "RMSNorm"):
         return nn.RMSNorm(dim)
     else:
