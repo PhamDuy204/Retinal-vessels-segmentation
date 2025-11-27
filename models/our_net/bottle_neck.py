@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from modules import SA, CA
 from mamba_ssm import Mamba2
+
 def _same_padding(kernel_size, dilation=1):
     k = kernel_size
     return (dilation * (k - 1)) // 2
@@ -17,7 +18,7 @@ def safe_group(channels: int, preferred: int = 8) -> int:
             return g
     return 1
 
-def get_rmsnorm(dim: int): 
+def get_rmsnorm(dim: int):
     if hasattr(nn, "RMSNorm"):
         return nn.RMSNorm(dim)
     else:

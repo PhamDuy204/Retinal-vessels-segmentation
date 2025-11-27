@@ -7,7 +7,7 @@ import random
 
 class SegModel(nn.Module):
     def __init__(self, in_channels,out_channels):
-        super().__init__() 
+        super().__init__()
         self.out_channels=out_channels
         # self.eps = 1e-7
         self.down_0=down_sampling(in_channels,32,(64,64)) #B,64,32,32

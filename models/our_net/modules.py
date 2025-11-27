@@ -91,13 +91,19 @@ class ConvFunc(nn.Module):
             nn.ReLU())
         self.gn=nn.GroupNorm(safe_group(in_channels,16),in_channels)
         self.act = nn.ReLU()
-        self.merge=nn.Conv2d(2*in_channels, in_channels, 1,padding='same',bias=False)
+        self.merge=nn.Conv2d(2*in_channels, in_channels, 1,bias=False)
+        self.with_activate=with_activate
+
+        # gọi init trong class
+        init_module_weights(self)
+
     def forward(self, x):
         y = self.conv(x)
         out = self.merge(torch.cat((x,y),1))
         if self.with_activate:
             return self.act(self.gn(out))
         return out
+
 
 class MKIR(nn.Module):
     def __init__(self, in_channels, out_channels, in_size=(64,64)):

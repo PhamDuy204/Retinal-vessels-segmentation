@@ -106,4 +106,3 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
     
     
 
-
