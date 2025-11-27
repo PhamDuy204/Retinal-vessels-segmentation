@@ -6,8 +6,6 @@ import torch.nn.functional as F
 import inspect
 from PIL import Image
 import kornia
-from scipy.signal import wiener
-import pywt
 import torch.nn as nn
 
 import torch.nn as nn

@@ -4,14 +4,9 @@ albumentations==2.0.8
 scikit-learn
 opencv-python
 matplotlib
-seaborn
-timm
 tqdm
 wandb
 torchmetrics
-onnx
-PyWavelets
 kornia
-mamba-ssm
+mamba-ssm==2.2.5
 causal-conv1d
-pytorch_wavelets

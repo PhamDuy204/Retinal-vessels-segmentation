@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# from bottle_neck import *
 from typing import Optional
 # from mamba_ssm import Mamba2 
 
@@ -28,15 +29,18 @@ class ConvFunc(nn.Module):
             pad = padding
         groups = in_channels
 
-        self.conv = nn.Conv2d(in_channels, in_channels, kernel_size, stride, pad, dilation, bias=False)
-
-        self.gn = nn.GroupNorm(8,in_channels, affine=False)
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size, stride, pad, dilation,groups=in_channels, bias=False),
+            nn.Conv2d(in_channels,in_channels,1,bias=False),
+            nn.ReLU(),
+            nn.Conv2d(in_channels, in_channels, kernel_size, stride, pad, dilation,groups=in_channels, bias=False),
+            nn.Conv2d(in_channels,in_channels,1,bias=False),nn.ReLU())
+        self.gn=nn.GroupNorm(safe_group(in_channels,16),in_channels)
         self.act = nn.ReLU()
         self.merge=nn.Conv2d(2*in_channels, in_channels, 1,padding='same',bias=False)
     def forward(self, x):
         y = self.conv(x)
-        y = self.gn(y)
-        return self.act(self.merge(torch.cat((x,y),1)))  
+        return self.act(self.gn(self.merge(torch.cat((x,y),1))))
 
 class MKIR(nn.Module):
     def __init__(self, in_channels, out_channels, in_size=(64,64)):
@@ -81,7 +85,6 @@ class MKIR(nn.Module):
         # print(merged.shape)
         return self.out(torch.cat((merged, x), dim=1))
         
-
 class CA(nn.Module):
     def __init__(self, channels, reduction_rate=4):
         super().__init__()
@@ -104,7 +107,7 @@ class CA(nn.Module):
         max_out = self.excitation(max_feat)
         attention = self.sigmoid(avg_out + max_out)
         return attention * x
-    
+
 class SA(nn.Module):
     def __init__(self, kernel_size=7):
         super().__init__()
@@ -137,7 +140,6 @@ class AG(nn.Module):
             nn.Conv2d(2 * in_channels, in_channels, 1, bias=False),
             nn.ReLU(),
         )
-
         self.channel_attention = nn.Sequential(
             nn.Conv2d(6 * in_channels, in_channels // reduction_ratio, 1, bias=False),
             nn.ReLU(),
@@ -146,14 +148,14 @@ class AG(nn.Module):
         )
 
         self.spatial_attention = nn.Sequential(
+            # Input là 2 kênh (từ AvgPool và MaxPool)
             nn.Conv2d(2, 1, kernel_size=spatial_kernel_size,
                       padding=spatial_kernel_size // 2, bias=False),
             nn.Sigmoid()
         )
-
         self.final_merge = nn.Sequential(
             nn.Conv2d(2 * in_channels, in_channels, 3, padding='same', bias=False),
-            nn.GroupNorm(8, in_channels, affine=False), 
+            nn.GroupNorm(8, in_channels, affine=False), # Giữ nguyên GroupNorm
             nn.ReLU(),
         )
         
@@ -161,10 +163,17 @@ class AG(nn.Module):
         self.map = nn.AdaptiveMaxPool2d(1)
 
     def forward(self, x_e, x_u):
+        '''
+        x_e : tensor (b, c, h, w) từ encoder (skip connection)
+        x_u: tensor (b, c, h, w) từ decoder (upsampled)
+        '''
+        b, c, h, w = x_e.shape
+
 
         gconv_x_u = self.gconv_x_u(x_u)
         gconv_x_e = self.gconv_x_e(x_e)
-        merge = self.fuse_gconv(torch.cat([gconv_x_u, gconv_x_e], dim=1)) # (b, c, h, w)
+
+        merge = self.fuse_gconv(torch.cat((gconv_x_u, gconv_x_e), 1)) # (b, c, h, w)
 
         gap_x_m = self.gap(merge)
         map_m = self.map(merge)
@@ -173,108 +182,83 @@ class AG(nn.Module):
         map_e = self.map(x_e)
         map_x_u = self.map(x_u)
 
-        global_context = torch.cat([gap_x_e, map_e, gap_x_u, map_x_u, gap_x_m, map_m], dim=1)
-        
+
+        global_context = torch.cat((gap_x_e, map_e, gap_x_u, map_x_u, gap_x_m, map_m), 1)
+
         channel_weights = self.channel_attention(global_context)
         
+
         merge_ca = merge * channel_weights # (b, c, h, w)
+
+
 
         avg_pool = torch.mean(merge_ca, dim=1, keepdim=True) # (b, 1, h, w)
         max_pool = torch.max(merge_ca, dim=1, keepdim=True)[0] # (b, 1, h, w)
         
+        # (b, 2, h, w) -> (b, 1, h, w)
         spatial_weights = self.spatial_attention(torch.cat([avg_pool, max_pool], dim=1))
         
+
         attended_merge = merge_ca * spatial_weights # (b, c, h, w)
+
 
         fused_output = self.final_merge(torch.cat((x_e, attended_merge), 1))
         
         return fused_output + attended_merge
 
-class CAB(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.pre_norm = nn.GroupNorm(safe_group(in_channels, 8), in_channels, affine=True)
-
-        self.norm_qk = nn.LayerNorm(in_channels)
-        self.q = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.k = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.v = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.pj = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        mid = max(in_channels * 2, 16)
-        self.ff = nn.Sequential(
-            nn.Conv2d(in_channels, mid, 1, bias=False),
-            nn.GELU(),
-            nn.Conv2d(mid, in_channels, 1, bias=False),
-        )
-
-    def forward(self, x):
-        """
-        x: (B, C, H, W)
-        returns: (B, C, H, W) with residual
-        """
-        b, c, h, w = x.shape
-        norm_x = self.pre_norm(x)              
-        q = self.q(norm_x)                      
-        k = self.k(norm_x)
-        v = self.v(norm_x)
-
-
-        N = h * w
-        q_flat = q.permute(0, 2, 3, 1).contiguous().view(b, N, c) 
-        k_flat = k.permute(0, 2, 3, 1).contiguous().view(b, N, c)
-        v_flat = v.permute(0, 2, 3, 1).contiguous().view(b, N, c)
-
-
-        qn = self.norm_qk(q_flat)  
-        kn = self.norm_qk(k_flat)
-
-
-        scale = torch.sqrt(torch.tensor(c, dtype=qn.dtype, device=qn.device))
-        attn_logits = torch.matmul(qn, kn.transpose(-1, -2)) / scale
-        attn = torch.softmax(attn_logits, dim=-1)  
-
-
-        out_flat = torch.matmul(attn, v_flat) 
-
-        out = out_flat.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()  
-        out = self.pj(out)  
-        ff_out = self.ff(out) 
-
-        return x + ff_out 
-
-
 class MAB(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         g = safe_group(in_channels, preferred=8)
-        self.branch = nn.Sequential(
-            CA(in_channels),
-            SA(),
-            nn.Conv2d(in_channels, in_channels, 1, bias=False),
-            nn.Sigmoid()
-        )
+        self.b_1= nn.Conv2d(in_channels, in_channels, 3, bias=False,padding='same',groups=in_channels)
+        self.b_2= nn.Conv2d(in_channels, in_channels, 3,dilation=2, bias=False,padding='same',groups=in_channels)
 
-        self.branch_t = nn.Sequential(
+        self.branch_0 = nn.Sequential(
+            CA(in_channels),
+            SA(),
+            nn.Conv2d(in_channels, in_channels, 3,dilation=2,padding='same', bias=False),
+            nn.Sigmoid()
+        )
+      
+        self.branch_1 = nn.Sequential(
+            CA(in_channels),
+            SA(),
+            nn.Conv2d(in_channels, in_channels, 3,dilation=1,padding='same', bias=False),
+            nn.Sigmoid()
+        )
+       
+        self.branch_2 = nn.Sequential(
             CA(in_channels),
             SA(),
             nn.Conv2d(in_channels, in_channels, 1, bias=False),
             nn.Sigmoid()
         )
-        self.cat = nn.Sequential(
-            nn.Conv2d(2 * in_channels, in_channels, 3, padding=_same_padding(3), bias=False),
-            nn.GroupNorm(1,in_channels,affine=False),
-        )
+        self.cat=nn.Conv2d(4 * in_channels, in_channels,3,padding='same', bias=False)
+
         self.act=nn.ReLU()
 
     def forward(self, x):
+        x_1=self.b_1(x)
+        x_2=self.b_2(x)
 
-        b1 = x * self.branch(x)
+        b0= x*self.branch_0(x)
+        # t_x = x.transpose(-2, -1).contiguous()     # (B, C, W, H)
+        # b0_t = t_x * self.branch_0_1(t_x)            # (B, C, W, H)
+        # b0_1 = b0_t.transpose(-2, -1).contiguous()
+        # out_0 = self.cat_0(torch.cat([b0, b0_1], dim=1))
 
-        t_x = x.transpose(-2, -1).contiguous()     # (B, C, W, H)
-        b2_t = t_x * self.branch_t(t_x)            # (B, C, W, H)
-        b2 = b2_t.transpose(-2, -1).contiguous()   # (B, C, H, W)
-        out = self.cat(torch.cat([b1, b2], dim=1)) + x
-        return self.act(out)
+        b1= x*self.branch_1(x_1)
+        # t_x_1 = x_1.transpose(-2, -1).contiguous()     # (B, C, W, H)
+        # b1_t = t_x_1 * self.branch_1_1(t_x_1)            # (B, C, W, H)
+        # b1_1 = b1_t.transpose(-2, -1).contiguous()
+        # out_1 = self.cat_1(torch.cat([b1, b1_1], dim=1))
+
+        b2= x*self.branch_2(x_2)
+        # t_x_2 = x_2.transpose(-2, -1).contiguous()     # (B, C, W, H)
+        # b2_t = t_x_2 * self.branch_2_1(t_x_2)            # (B, C, W, H)
+        # b2_1 = b2_t.transpose(-2, -1).contiguous()
+        # out_2 = self.cat_2(torch.cat([b2, b2_1], dim=1))
+        return self.act(self.cat(torch.cat((b0,b1,b2,x),1)))
     
 
 class down_sampling(nn.Module):
@@ -357,8 +341,8 @@ class UpFunc(nn.Module):
         up_s=self.up_sampling(x)
         up_c=self.up_conv(x)
         cat_u=torch.cat((up_s,up_c),1)
-        return  self.gelu(self.conv_1(cat_u))
-       
+        return self.gelu(self.conv_1(cat_u))
+
 class up_sampling(nn.Module):
     def __init__(self,in_channels,in_channels_t,out_channels,in_size):
         super().__init__()
