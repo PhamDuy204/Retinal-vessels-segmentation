@@ -14,7 +14,28 @@ venv/
 *.pkl
 *.h5
 *.ckpt
-*.ipynb
+
+.vscode/
+
+wandb/
+checkpoints/
+notebooks/
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+venv/
+.env/
+.venv/
+
+*.log
+*.sqlite3
+*.db
+*.pkl
+*.h5
+*.ckpt
 
 .vscode/
 

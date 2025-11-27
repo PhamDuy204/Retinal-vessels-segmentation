@@ -8,5 +8,3 @@ tqdm
 wandb
 torchmetrics
 kornia
-mamba-ssm==2.2.5
-causal-conv1d

@@ -34,13 +34,13 @@ def get_train_patch_transforms():
             A.HorizontalFlip(p=1.0),
             A.VerticalFlip(p=1.0)
         ], p=0.5),
-        A.Normalize(mean=(0,),std=(1,)),
+        A.Normalize(mean=(0.5,),std=(0.5,)),
         ToTensorV2()
     ])
 
 def get_test_patch_transforms():
     return A.Compose([
-        A.Normalize(mean=(0,),std=(1,)),
+        A.Normalize(mean=(0.5,),std=(0.5,)),
         ToTensorV2()
     ])
 

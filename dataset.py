@@ -168,4 +168,3 @@ class CustomTestDataset(Dataset):
             'mask':mask.squeeze(),
             'edge':edge,
         }
-
