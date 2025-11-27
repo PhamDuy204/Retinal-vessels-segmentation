@@ -245,43 +245,12 @@ class BottleNeck_2(nn.Module):
             nn.Linear(dimension, dimension, bias=False),
         )
 
-        self.tsb = TSB(in_channels*2, out_channels) 
-        self.gn = nn.GroupNorm(num_channels=out_channels, 
-                               num_groups=out_channels, affine=False)
-
-    def forward(self, X): 
-        x_1 = self.branch_1(X)
-        x_2 = self.branch_2(X) 
-
-        fusion = x_1 + x_2 - x_1 * x_2 
-
-        out = self.tsb(fusion) 
-        out = self.gn(out) 
-
-        return out  
-    
-# class BottleNeck(nn.Module):
-#     def __init__(self, dimension, d_state=16):
-#         super().__init__()
-#         self.pre_norm = get_rmsnorm(dimension)
-#         self.rev_pre_norm = get_rmsnorm(dimension)
-#         self.post_norm = get_rmsnorm(dimension)
-
-#         self.mamba = Mamba2(dimension, 64, conv_bias=False, d_conv=4, expand=2)
-#         self.mamba2 = Mamba2(dimension, 64, conv_bias=False, d_conv=4, expand=2)
-
-#         self.merge = nn.Sequential(
-#             nn.Linear(2 * dimension, max(dimension // 2, 8), bias=False),
-#             nn.GELU(),
-#             nn.Linear(max(dimension // 2, 8), dimension, bias=False),
-#         )
-
-#     def forward(self, x: torch.Tensor):
-#         """
-#         x: (B, C, H, W)
-#         returns: (B, C, H, W)
-#         """
-#         b, c, h, w = x.shape
+    def forward(self, x: torch.Tensor):
+        """
+        x: (B, C, H, W)
+        returns: (B, C, H, W)
+        """
+        b, c, h, w = x.shape
 
 
         seq = x.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
