@@ -7,6 +7,7 @@ matplotlib
 tqdm
 wandb
 torchmetrics
+ml-collections
 kornia
 mamba-ssm==2.2.5
 causal-conv1d
