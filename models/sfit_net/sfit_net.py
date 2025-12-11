@@ -1,42 +1,65 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import sys 
+import os 
+import torch 
+import torch.nn as nn 
+import torch.nn.functional as F  
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+
+from modules import * 
+from bottle_neck import * 
 
 
 
-class SRU(nn.Module):
-    def __init__(self, channels, num_groups=8):
-        super(SRU, self).__init__()
+class SegModel(nn.Module):
+    def __init__(self, in_channels=1, num_classes=1):
+        super().__init__()
         
-        self.gn = nn.GroupNorm(num_groups=num_groups, num_channels=channels)
-        self.sigmoid = nn.Sigmoid()
-        self.threshold = 0.5
+        self.enc1 = ConvBNReLU(in_channels=in_channels, out_channels=64)
+        self.sru1 = SRU(channels=64)
+        self.pool1 = nn.MaxPool2d(2)
+
+
+        self.enc2 = ConvBNReLU(in_channels=64, out_channels=128)
+        self.sru2 = SRU(128)
+        self.pool2 = nn.MaxPool2d(2)
+
+        self.enc3 = ConvBNReLU(in_channels=128, out_channels=256)
+        
+        self.fit = FIT(256)
+        
+
+        self.up1 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+
+        self.tfa1 = TFA(x_channels=256, t_channels=128, out_channels=128)
+        self.up_conv1 = UpConv(128, 128) 
+        
+        self.up2 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.tfa2 = TFA(x_channels=128, t_channels=64, out_channels=64)
+        self.up_conv2 = UpConv(64, 64)  
+        
+        self.final_conv = nn.Conv2d(64, num_classes, kernel_size=1)
 
     def forward(self, x):
-        b, c, h, w = x.shape
+        e1 = self.enc1(x) 
+        e1_sru = self.sru1(e1) 
         
-        x_out_gn = self.gn(x)
+        x = self.pool1(e1_sru)
+        e2 = self.enc2(x)
+        e2_sru = self.sru2(e2) 
         
-        gn_gamma = self.gn.weight  # Shape: (C,)
+        x = self.pool2(e2_sru)
+        e3 = self.enc3(x)      
         
-        w_gamma = gn_gamma / (torch.sum(gn_gamma) + 1e-6)
-        w_gamma = w_gamma.view(1, c, 1, 1) 
-        weights = self.sigmoid(x_out_gn * w_gamma)
+        f3 = self.fit(e3)   
         
-        mask1 = (weights > self.threshold).float()
-        mask2 = (weights <= self.threshold).float()
-        
-        x1_w = x * mask1
-        x2_w = x * mask2
-        
-        x11, x12 = torch.chunk(x1_w, 2, dim=1)
-        x21, x22 = torch.chunk(x2_w, 2, dim=1)
-        
-        out1 = x11 + x22 
-        out2 = x21 + x12 
-        out = torch.cat([out1, out2], dim=1)
+        d1_up = self.up1(f3)   
+        d1_tfa = self.tfa1(x=d1_up, t=e2_sru) 
+        d1 = self.up_conv1(d1_tfa) 
+
+        d2_up = self.up2(d1)   
+        d2_tfa = self.tfa2(x=d2_up, t=e1_sru)
+        d2 = self.up_conv2(d2_tfa) 
+        out = self.final_conv(d2)
         
         return out
-
-
-

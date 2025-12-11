@@ -72,8 +72,6 @@ class MHSA(nn.Module):
         self.qkv = nn.Linear(channels, channels * 3)
         self.proj = nn.Linear(channels, channels)
         
-        # Learnable positional bias (epsilon) 
-        # Kích thước bias phụ thuộc vào số lượng tokens (N x N), với N = H*W
         num_patches = img_size[0] * img_size[1]
         self.pos_bias = nn.Parameter(torch.zeros(1, num_heads, num_patches, num_patches))
         
@@ -85,32 +83,20 @@ class MHSA(nn.Module):
         )
 
     def forward(self, x):
-        """
-        Input: (B, C, H, W)
-        """
         b, c, h, w = x.shape
         n = h * w
         
-        # Reshape và Permute để phù hợp với MHSA tiêu chuẩn: (B, N, C) 
-        x_flat = x.flatten(2).transpose(1, 2) # (B, N, C)
-        
-        # --- MHSA Part ---
+        x_flat = x.flatten(2).transpose(1, 2) 
         residual = x_flat
         x_norm = self.norm1(x_flat)
-        
-        # Q, K, V computation
         qkv = self.qkv(x_norm).reshape(b, n, 3, self.num_heads, c // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2] # (B, Heads, N, Head_Dim)
+        q, k, v = qkv[0], qkv[1], qkv[2] 
+        attn = (q @ k.transpose(-2, -1)) * self.scale 
         
-        # Attention: Softmax(Q * K.T + epsilon) 
-        attn = (q @ k.transpose(-2, -1)) * self.scale # (B, Heads, N, N)
-        
-        # Cộng thêm bias vị trí (epsilon)
         if self.pos_bias.shape[-1] == n:
             attn = attn + self.pos_bias
         else:
-             # Interpolate nếu kích thước ảnh đầu vào thay đổi (an toàn)
-             pass 
+            pass 
         
         attn = attn.softmax(dim=-1)
         x_attn = (attn @ v).transpose(1, 2).reshape(b, n, c) # (B, N, C)
@@ -119,60 +105,62 @@ class MHSA(nn.Module):
         # Residual 1
         x = residual + x_attn
         
-        # --- FFN Part ---
+        ## FFN 
         residual = x
         x_norm = self.norm2(x)
         x_ffn = self.ffn(x_norm)
         
         # Residual 2
         out = residual + x_ffn
-        
-        # Reshape lại về (B, C, H, W) để nối vào mạng U-Net
         out = out.transpose(1, 2).reshape(b, c, h, w)
         return out
 
-class FIT_Module(nn.Module):
-    """
-    Feature Interaction Transformer (FIT) Module
-    Kết hợp LGFI và MHSA theo trình tự.
-    
-    Tham khảo: Fig. 1 và Section 2.3
-    """
-    def __init__(self, channels, img_size=(16, 16), num_heads=8):
-        super(FIT_Module, self).__init__()
-        
-        # Step 1: Local-Global Feature Interaction
-        self.lgfi = LGFI(channels)
-        
-        # Step 2: Multi-headed Self Attention (với global context)
-        self.mhsa = MHSA_Block(channels, img_size, num_heads=num_heads)
+
+class LayerNorm2d(nn.Module):
+    def __init__(self, num_channels, eps=1e-6):
+        super(LayerNorm2d, self).__init__()
+        self.norm = nn.LayerNorm(num_channels, eps=eps)
 
     def forward(self, x):
-        # Step-by-step extraction 
-        # Đầu tiên qua LGFI để tương tác local-global
-        x = self.lgfi(x)
-        
-        # Sau đó qua MHSA để nắm bắt long-range dependencies
-        x = self.mhsa(x)
-        
+        x = x.permute(0, 2, 3, 1)
+        x = self.norm(x)
+        x = x.permute(0, 3, 1, 2)
         return x
 
-# --- Example Usage ---
-if __name__ == "__main__":
-    # Cấu hình giả định ở tầng đáy (bottleneck) của U-Net
-    # Input size thường nhỏ (ví dụ 16x16) nhưng channels lớn (ví dụ 256)
-    c = 256
-    h, w = 16, 16
-    input_tensor = torch.randn(2, c, h, w)
-    
-    # Khởi tạo FIT Module
-    fit_module = FIT_Module(channels=c, img_size=(h, w), num_heads=8)
-    
-    # Forward pass
-    output_tensor = fit_module(input_tensor)
-    
-    print(f"Input shape: {input_tensor.shape}")
-    print(f"Output shape: {output_tensor.shape}")
-    
-    assert input_tensor.shape == output_tensor.shape
-    print("FIT module executed successfully.")
+
+class FIT(nn.Module):
+    def __init__(self, channels, img_size=(16, 16), num_heads=8):
+        super(FIT, self).__init__()
+        
+        self.norm1 = LayerNorm2d(channels) 
+        self.lgfi = LGFI(channels) 
+
+        self.norm2 = LayerNorm2d(channels)
+        self.mhsa = MHSA(channels, img_size, num_heads) 
+        self.norm3 = LayerNorm2d(channels)
+        self.ffn = nn.Sequential(
+            nn.Conv2d(channels, channels * 4, kernel_size=1),
+            nn.GELU(),
+            nn.Conv2d(channels * 4, channels, kernel_size=1)
+        )
+
+    def forward(self, x):
+        residual = x
+        
+        x_norm = self.norm1(x)
+        x_lgfi = self.lgfi(x_norm)
+        
+        x = residual + x_lgfi
+        
+        residual = x
+        
+        x_norm = self.norm2(x)
+        x_mhsa = self.mhsa(x_norm) 
+        
+        x = residual + x_mhsa
+        residual = x
+        x_norm = self.norm3(x)
+        x_ffn = self.ffn(x_norm)
+        x = residual + x_ffn
+        
+        return x
