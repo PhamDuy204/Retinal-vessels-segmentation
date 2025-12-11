@@ -46,7 +46,7 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
                     val_set
                 )
             else:
-                if name not in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']:
+                if name not in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5','CHASEDB_F1','CHASEDB_F2','CHASEDB_F3','CHASEDB_F4','REVERSED_DRIVE','DRIVE_RANDOM_SEED42']:
                     all_custom_train_patch_datasets.append(
                         CustomTrainDataset(os.path.join(data_paths,name,'*'),train_transforms,with_patches=patches,
                                             num_patches=num_patches,patch_size=patch_size,type_split=type_split)
@@ -85,8 +85,6 @@ def get_all_training_set(data_paths,batch_size=1,num_patches=500,patch_size=64,t
                 val_set = all_custom_test_patch_datasets[j]
                 val_name = val_set.get_name()
                 train_name=train_set.get_name()
-                if (val_name in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']) or (train_name in ['STARE_F2','STARE_F3','STARE_F4','STARE_F5']) :
-                    continue
                 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,)        
                 val_loader   = DataLoader(val_set, batch_size=1, shuffle=False,)        
                 all_train_methods.append({

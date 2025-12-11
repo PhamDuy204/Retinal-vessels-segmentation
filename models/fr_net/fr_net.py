@@ -4,7 +4,61 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
 import torch.nn as nn
-from .utils import InitWeights_He
+import torch.nn.functional as F
+
+
+
+def init_module_weights(module: nn.Module):
+    """
+    Init trọng số theo quy tắc chung:
+      - Conv2d, ConvTranspose2d: Kaiming Uniform (fan_in, relu) trừ kernel=1 -> Xavier
+      - Linear: Kaiming Uniform
+      - GroupNorm/BatchNorm/LayerNorm: weight=1 bias=0 (nếu affine)
+      - Embedding: normal std=0.02
+    Gọi trong mỗi __init__() của class: init_module_weights(self)
+    """
+    for m in module.modules():
+        # Conv2d
+        if isinstance(m, nn.Conv2d):
+            # m.kernel_size có thể là tuple
+            k = m.kernel_size if hasattr(m, 'kernel_size') else (1,1)
+            # nếu 1x1 conv thường dùng xavier; các conv khác dùng kaiming (ReLU-ish)
+            if isinstance(k, tuple) and k[0] == 1 and k[1] == 1:
+                nn.init.xavier_uniform_(m.weight)
+            else:
+                nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+        # ConvTranspose2d
+        elif isinstance(m, nn.ConvTranspose2d):
+            nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+        # Linear
+        elif isinstance(m, nn.Linear):
+            nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+        # Normalization layers
+        elif isinstance(m, (nn.BatchNorm2d, nn.LayerNorm, nn.GroupNorm)):
+            # nếu layer có tham số affine (weight/bias), set weight=1 bias=0
+            if hasattr(m, 'weight') and m.weight is not None:
+                try:
+                    nn.init.constant_(m.weight, 1)
+                except Exception:
+                    pass
+            if hasattr(m, 'bias') and m.bias is not None:
+                try:
+                    nn.init.constant_(m.bias, 0)
+                except Exception:
+                    pass
+
+        # Embedding
+        elif isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
 
 class conv(nn.Module):
@@ -160,7 +214,7 @@ class SegModel(nn.Module):
             filters[0], num_classes, kernel_size=1, padding=0, bias=True)
         self.fuse = nn.Conv2d(
             5, num_classes, kernel_size=1, padding=0, bias=True)
-        self.apply(InitWeights_He)
+        self.apply(init_module_weights)
 
     def forward(self, x):
         x1_3, x_down1_3 = self.block1_3(x)
@@ -186,5 +240,6 @@ class SegModel(nn.Module):
                       self.final3(x11)+self.final4(x12)+self.final5(x13))/5
         else:
             output = self.final5(x13)
-
-        return output
+        if self.training:
+            return output
+        return F.sigmoid(output)

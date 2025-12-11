@@ -24,6 +24,57 @@ from vit_seg_modeling import VisionTransformer
 
 nonlinearity = partial(F.relu, inplace=True)
 
+def init_module_weights(module: nn.Module):
+    """
+    Init trọng số theo quy tắc chung:
+      - Conv2d, ConvTranspose2d: Kaiming Uniform (fan_in, relu) trừ kernel=1 -> Xavier
+      - Linear: Kaiming Uniform
+      - GroupNorm/BatchNorm/LayerNorm: weight=1 bias=0 (nếu affine)
+      - Embedding: normal std=0.02
+    Gọi trong mỗi __init__() của class: init_module_weights(self)
+    """
+    for m in module.modules():
+        # Conv2d
+        if isinstance(m, nn.Conv2d):
+            # m.kernel_size có thể là tuple
+            k = m.kernel_size if hasattr(m, 'kernel_size') else (1,1)
+            # nếu 1x1 conv thường dùng xavier; các conv khác dùng kaiming (ReLU-ish)
+            if isinstance(k, tuple) and k[0] == 1 and k[1] == 1:
+                nn.init.xavier_uniform_(m.weight)
+            else:
+                nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+        # ConvTranspose2d
+        elif isinstance(m, nn.ConvTranspose2d):
+            nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+        # Linear
+        elif isinstance(m, nn.Linear):
+            nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+        # Normalization layers
+        elif isinstance(m, (nn.BatchNorm2d, nn.LayerNorm, nn.GroupNorm)):
+            # nếu layer có tham số affine (weight/bias), set weight=1 bias=0
+            if hasattr(m, 'weight') and m.weight is not None:
+                try:
+                    nn.init.constant_(m.weight, 1)
+                except Exception:
+                    pass
+            if hasattr(m, 'bias') and m.bias is not None:
+                try:
+                    nn.init.constant_(m.bias, 0)
+                except Exception:
+                    pass
+
+        # Embedding
+        elif isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
 class conv_block(nn.Module):
     def __init__(self, ch_in, ch_out):
@@ -224,6 +275,7 @@ class SegModel(nn.Module):
 
         self.shallow_fusion = shallow_fea_fusion(F_g=64,F_l=64,F_int=64)
         self.Trans = VisionTransformer(get_b16_config(), img_size=16)
+        self.apply(init_module_weights)
 
     def forward(self, x):
         x1 = self.Conv1(x) 
@@ -263,5 +315,6 @@ class SegModel(nn.Module):
 
         shallow_fea = self.shallow_fusion(d3,d2)
         out = self.fconv(deep_fea+shallow_fea)
-
-        return out
+        if self.training:
+            return out
+        return F.sigmoid(out)
