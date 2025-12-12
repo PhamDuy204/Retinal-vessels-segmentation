@@ -1,63 +1,81 @@
-from torch import nn
-from torch import nn 
-from torch.nn import functional as F 
-import torch 
+# sub-parts of the U-Net model
 
-class DoubleConv(nn.Module):
-    def __init__(self, in_channel, out_channel, mid_channel=None):
-        super().__init__()
-        if not mid_channel:
-            mid_channel = out_channel
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-        self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channel, mid_channel, kernel_size=3, padding=1,bias=False),
-            nn.GroupNorm(mid_channel,mid_channel,affine=False),
+
+class double_conv(nn.Module):
+    '''(conv => BN => ReLU) * 2'''
+    def __init__(self, in_ch, out_ch):
+        super(double_conv, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channel, out_channel, kernel_size=3, padding=1,bias=False),
-            nn.GroupNorm(out_channel,out_channel,affine=False),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True)
         )
 
     def forward(self, x):
-        return self.double_conv(x)
+        x = self.conv(x)
+        return x
 
-class DownScaling(nn.Module):
-    def __init__(self, in_channel, out_channel):
-        super().__init__()
-        self.downscaling = nn.Sequential(
+
+class inconv(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(inconv, self).__init__()
+        self.conv = double_conv(in_ch, out_ch)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
+
+class down(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(down, self).__init__()
+        self.mpconv = nn.Sequential(
             nn.MaxPool2d(2),
-            DoubleConv(in_channel, out_channel)
+            double_conv(in_ch, out_ch)
         )
 
     def forward(self, x):
-        return self.downscaling(x)
+        x = self.mpconv(x)
+        return x
 
-class UpScaling(nn.Module):
-    def __init__(self, in_channel, out_channel):
-        super().__init__()
 
-        self.upscaling = nn.ConvTranspose2d(in_channel, in_channel // 2, kernel_size=2, stride=2,bias=False)
-        self.double_conv = DoubleConv(in_channel, out_channel)
+class up(nn.Module):
+    def __init__(self, in_ch, out_ch, bilinear=True):
+        super(up, self).__init__()
 
-    def forward(self, x1, x2): # x1 from ConvTransposed, x2 from Encoder
-        x1 = self.upscaling(x1)
+        #  would be a nice idea if the upsampling could be learned too,
+        #  but my machine do not have enough memory to handle all those weights
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        else:
+            self.up = nn.ConvTranspose2d(in_ch//2, in_ch//2, 2, stride=2)
 
-        delta_height = x2.size()[2] - x1.size()[2]
-        delta_width = x2.size()[3] - x1.size()[3]
+        self.conv = double_conv(in_ch, out_ch)
 
-        x1 = F.pad(x1, [delta_width // 2, delta_width - delta_width // 2,
-                        delta_height // 2, delta_height - delta_height // 2])
-
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        diffX = x2.size()[2] - x1.size()[2]
+        diffY = x2.size()[3] - x1.size()[3]
+        #print('sizes',x1.size(),x2.size(),diffX // 2, diffX - diffX//2, diffY // 2, diffY - diffY//2)
+        x1 = F.pad(x1, (diffX // 2, diffX - diffX//2,
+                        diffY // 2, diffY - diffY//2))
         x = torch.cat([x2, x1], dim=1)
+        x = self.conv(x)
+        return x
 
-        return self.double_conv(x)
 
-
-class OutConv(nn.Module):
-    def __init__(self, in_channel, out_channel):
-        super().__init__()
-        self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=1,bias=False)
+class outconv(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(outconv, self).__init__()
+        self.conv = nn.Conv2d(in_ch, out_ch, 1)
 
     def forward(self, x):
-        return self.conv(x)
-    
+        x = self.conv(x)
+        return x

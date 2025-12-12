@@ -47,7 +47,7 @@ def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split
                 # image = window_partition(image.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
                 # edge = window_partition(edge.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
             
-            chunk_size = max(image.shape[0]//512,1)
+            chunk_size = max(image.shape[0]//128,1)
             # print(chunk_size)
             chunk_image = torch.chunk(image,chunk_size,0)
             chunk_edge = torch.chunk(edge,chunk_size,0)
