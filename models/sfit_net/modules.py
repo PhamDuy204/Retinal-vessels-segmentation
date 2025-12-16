@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 class SRU(nn.Module):
     def __init__(self, channels, num_groups=8):
         super(SRU, self).__init__()
+        
         self.gn = nn.GroupNorm(num_groups=num_groups, num_channels=channels)
         self.sigmoid = nn.Sigmoid()
         self.threshold = 0.5
@@ -108,7 +110,7 @@ class ConvFunc(nn.Module):
         
         self.block = nn.Sequential(
             nn.Conv2d(in_channels=self.in_channels, out_channels=self.out_channels, 
-                                    kernel_size=3, padding='same',bias=False), 
+                                    kernel_size=3, padding='same'), 
             nn.BatchNorm2d(num_features=out_channels),
             nn.ReLU()
         ) 
@@ -119,13 +121,13 @@ class ConvFunc(nn.Module):
 
 
 class UpConv(nn.Module):
+
     def __init__(self, in_channels, out_channels):
         super(UpConv, self).__init__()
-        self.up = nn.ConvTranspose2d(in_channels,out_channels,2,2,bias=False)
         self.block = nn.Sequential(
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
     def forward(self, x):
-        return self.block(self.up(x))
+        return self.block(x)
