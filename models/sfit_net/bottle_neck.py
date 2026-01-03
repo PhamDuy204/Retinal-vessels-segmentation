@@ -10,17 +10,17 @@ class LGFI(nn.Module):
         
         self.norm1 = nn.GroupNorm(1, channels) 
         
-        self.proj_q = nn.Conv2d(channels, channels, kernel_size=1)
-        self.proj_k = nn.Conv2d(channels, channels, kernel_size=1)
-        self.proj_v = nn.Conv2d(channels, channels, kernel_size=1)
+        self.proj_q = nn.Conv2d(channels, channels, kernel_size=1,bias=False)
+        self.proj_k = nn.Conv2d(channels, channels, kernel_size=1,bias=False)
+        self.proj_v = nn.Conv2d(channels, channels, kernel_size=1,bias=False)
         
-        self.proj_out = nn.Conv2d(channels, channels, kernel_size=1)
+        self.proj_out = nn.Conv2d(channels, channels, kernel_size=1,bias=False)
         
         self.norm2 = nn.GroupNorm(1, channels)
         self.ffn = nn.Sequential(
-            nn.Conv2d(channels, channels, kernel_size=1),
+            nn.Conv2d(channels, channels, kernel_size=1,bias=False),
             nn.GELU(),
-            nn.Conv2d(channels, channels, kernel_size=1)
+            nn.Conv2d(channels, channels, kernel_size=1,bias=False)
         )
 
     def forward(self, x):
@@ -69,8 +69,8 @@ class MHSA(nn.Module):
         self.norm2 = nn.LayerNorm(channels)
         
         # MHSA Projections
-        self.qkv = nn.Linear(channels, channels * 3)
-        self.proj = nn.Linear(channels, channels)
+        self.qkv = nn.Linear(channels, channels * 3,bias=False)
+        self.proj = nn.Linear(channels, channels,bias=False)
         
         num_patches = img_size[0] * img_size[1]
         self.pos_bias = nn.Parameter(torch.zeros(1, num_heads, num_patches, num_patches))

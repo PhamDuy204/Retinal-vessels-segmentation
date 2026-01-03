@@ -29,12 +29,12 @@ class SegModel(nn.Module):
         self.fit = FIT(256)
         
 
-        self.up1 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.up1 = nn.ConvTranspose2d(256, 256, kernel_size=4, stride=2, padding=1,bias=False)
 
         self.tfa1 = TFA(x_channels=256, t_channels=128, out_channels=128)
         self.up_conv1 = UpConv(128, 128) 
         
-        self.up2 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.up2 = nn.ConvTranspose2d(128, 128, kernel_size=4, stride=2, padding=1,bias=False)
         self.tfa2 = TFA(x_channels=128, t_channels=64, out_channels=64)
         self.up_conv2 = UpConv(64, 64)  
         
@@ -61,5 +61,6 @@ class SegModel(nn.Module):
         d2_tfa = self.tfa2(x=d2_up, t=e1_sru)
         d2 = self.up_conv2(d2_tfa) 
         out = self.final_conv(d2)
-        
-        return out
+        if self.training:
+            return out
+        return F.sigmoid(out)

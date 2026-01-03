@@ -4,25 +4,30 @@ import torch.nn.functional as F
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules import *
 class SegModel(nn.Module):
-    def __init__(self, n_channel, n_class):
-        super().__init__()
-        self.n_channel = n_channel
-        self.n_class = n_class
-
-        self.first_conv = DoubleConv(n_channel, 64)
-        
-        self.down1 = DownScaling(64, 128)
-        self.down2 = DownScaling(128, 256)
-        self.up3 = UpScaling(256, 128)
-        self.up4 = UpScaling(128, 64)
-
-        self.final_conv = OutConv(64, n_class)
+    def __init__(self, n_channels, n_classes):
+        super(SegModel, self).__init__()
+        self.inc = inconv(n_channels, 64)
+        self.down1 = down(64, 128)
+        self.down2 = down(128, 256)
+        self.down3 = down(256, 512)
+        self.down4 = down(512, 512)
+        self.up1 = up(1024, 256,bilinear=False)
+        self.up2 = up(512, 128,bilinear=False)
+        self.up3 = up(256, 64,bilinear=False)
+        self.up4 = up(128, 64,bilinear=False)
+        self.outc = outconv(64, n_classes)
 
     def forward(self, x):
-        x1 = self.first_conv(x)
+        x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
-        x = self.up3(x3, x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
         x = self.up4(x, x1)
-
-        return F.sigmoid(self.final_conv(x))
+        x = self.outc(x)
+        if self.training:
+            return x
+        return F.sigmoid(x)
