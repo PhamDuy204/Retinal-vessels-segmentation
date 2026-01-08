@@ -11,7 +11,7 @@ from transforms import get_test_patch_transforms
 from sklearn.metrics import f1_score
 
 # --- Danh sách model có sẵn ---
-model_lst = ["Our_net", "UNet", "Dysta_net", "EDAE_net","Sfit_net","FR_net","GTDLA"]
+model_lst = ["Our_net"]
 
 st.title("Segmentation Demo App")
 
