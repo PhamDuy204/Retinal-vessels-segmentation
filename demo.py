@@ -11,7 +11,7 @@ from transforms import get_test_patch_transforms
 from sklearn.metrics import f1_score
 
 # --- Danh sách model có sẵn ---
-model_lst = ["Our_net"]
+model_lst = ["Our_net","Sfit_net","Unet","Dysta_net","FR_net","GTDLA","EDAE_net"]
 
 st.title("Segmentation Demo App")
 
@@ -19,8 +19,12 @@ st.title("Segmentation Demo App")
 selected_model = st.selectbox("Chọn model:", model_lst, index=0)
 model_name = selected_model.lower()
 
-# Thêm class model vào safe globals rồi load (chỉ khi bạn tin checkpoint)
-torch.serialization.add_safe_globals([load_model_class(model_name)])
+# Load model class and prepare sys.modules for unpickling
+# (load_model_class keeps the model's modules in sys.modules)
+load_model_class(model_name)
+
+# Now load the checkpoint using torch.load
+# sys.modules has the correct model modules already loaded
 model = torch.load(
     f'checkpoints/{model_name}.pt',
     map_location='cuda' if torch.cuda.is_available() else 'cpu',

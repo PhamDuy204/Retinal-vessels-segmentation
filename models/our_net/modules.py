@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # from bottle_neck import *
 from typing import Optional
 from mamba_ssm import Mamba2
