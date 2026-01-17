@@ -211,3 +211,39 @@ def save_png_to_bytes(img):
         img.save(buf, format="PNG")
     buf.seek(0)
     return buf.getvalue()
+
+def create_zoom_inset(image_path, output_path):
+    img = cv2.imread(image_path)
+    h, w = img.shape[:2]
+
+    # 1. Xác định vị trí vùng muốn cắt (x, y, width, height)
+    # Bạn hãy điều chỉnh các con số này theo ý muốn
+    crop_x, crop_y, crop_w, crop_h = 243, 419, 48, 30 
+    
+    # 2. Cắt vùng đó ra
+    roi = img[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+
+    # 3. Phóng to vùng đã cắt (ví dụ phóng lên 2.5 lần)
+    zoom_scale = 4
+    zoomed_roi = cv2.resize(roi, None, fx=zoom_scale, fy=zoom_scale, interpolation=cv2.INTER_LANCZOS4)
+
+    # 4. Vẽ khung vàng cho vùng cắt trên ảnh gốc
+    cv2.rectangle(img, (crop_x, crop_y), (crop_x+crop_w, crop_y+crop_h), (0, 255, 0), 2)
+
+    # 5. Xác định vị trí đặt ảnh đã zoom (ví dụ: góc dưới bên phải)
+    zh, zw = zoomed_roi.shape[:2]
+    pos_x, pos_y = w - zw , h - zh# cách lề 20px
+    
+    # Vẽ khung vàng cho ảnh zoom
+    cv2.rectangle(zoomed_roi, (0, 0), (zw-1, zh-1), (0, 255, 0), 3)
+
+    # 6. Đè ảnh zoom lên ảnh gốc
+    img[pos_y:pos_y+zh, pos_x:pos_x+zw] = zoomed_roi
+
+    # (Tùy chọn) Vẽ đường gạch đứt nối giữa vùng gốc và vùng zoom
+    # cv2.line(img, (crop_x+crop_w, crop_y+crop_h), (pos_x, pos_y), (0, 255, 255), 1)
+
+    cv2.imwrite(output_path, img)
+
+# # Chạy thử
+# create_zoom_inset("anh_vong_mac_1.jpg", "ket_qua_1.jpg")

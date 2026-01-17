@@ -151,14 +151,14 @@ if st.button("Run Segmentation"):
         zip_buffer = BytesIO()
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-            zipf.writestr("01_input.png", save_png_to_bytes(ori_image))
-            zipf.writestr("02_processed.png", save_png_to_bytes(processed_vis))
-            zipf.writestr("03_prediction_mask.png", save_png_to_bytes(seg_display))
-            zipf.writestr("04_prediction_overlay.png", save_png_to_bytes(overlay_pil))
+            zipf.writestr(f"01_{model_name}_input.png", save_png_to_bytes(ori_image))
+            zipf.writestr(f"02_{model_name}_processed.png", save_png_to_bytes(processed_vis))
+            zipf.writestr(f"03_{model_name}_prediction_mask.png", save_png_to_bytes(seg_display))
+            zipf.writestr(f"04_{model_name}_prediction_overlay.png", save_png_to_bytes(overlay_pil))
             
             if uploaded_gt is not None:
-                zipf.writestr("05_ground_truth.png", save_png_to_bytes(gt_display))
-                zipf.writestr("06_error_map.png", save_png_to_bytes(error_map))
+                zipf.writestr(f"05_{model_name}_ground_truth.png", save_png_to_bytes(gt_display))
+                zipf.writestr(f"06_{model_name}_error_map.png", save_png_to_bytes(error_map))
                 
         st.download_button(
             label="📦 Tải TẤT CẢ kết quả (ZIP)",
