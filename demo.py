@@ -8,20 +8,22 @@ import torch
 from load_model import load_model_class
 from utils import *
 from transforms import get_test_patch_transforms
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, recall_score
+from io import BytesIO
+import zipfile
 
 # --- Danh sách model có sẵn ---
-model_lst = ["Our_net","Sfit_net","Unet","Dysta_net","FR_net","GTDLA","EDAE_net"]
-
+model_lst = os.listdir('checkpoints/')
 st.title("Segmentation Demo App")
 
 # Chọn model
 selected_model = st.selectbox("Chọn model:", model_lst, index=0)
-model_name = selected_model.lower()
+model_name = selected_model.replace('.pt', '')
 
+# if model_name == our_net_woLoss:
 # Load model class and prepare sys.modules for unpickling
 # (load_model_class keeps the model's modules in sys.modules)
-load_model_class(model_name)
+load_model_class(model_name if model_name != 'our_net_woLoss' else 'our_net')
 
 # Now load the checkpoint using torch.load
 # sys.modules has the correct model modules already loaded
@@ -34,7 +36,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model = model.to(device).eval()
 
 # Uploads
-uploaded_image = st.file_uploader("Upload ảnh input", type=["png", "jpg", "jpeg","tif"])
+uploaded_image = st.file_uploader("Upload ảnh input", type=["png", "jpg", "jpeg","tif","ppm"])
 uploaded_gt = st.file_uploader("Upload Ground Truth (optional)", type=["png", "jpg", "jpeg","gif","tif"])
 
 # Run button
@@ -44,10 +46,9 @@ if st.button("Run Segmentation"):
     else:
         # --- Input image ---
         ori_image = np.array(Image.open(uploaded_image).convert('RGB'))
-        # Keep a processed copy for visualization (before tensor transforms)
-        processed_vis = preprocessing_img(ori_image).astype(np.uint8)  # assuming preprocessing_img returns uint8 HxW or HxWx3
 
-        # --- Prepare image for model inference (tensor) ---
+        processed_vis = preprocessing_img(ori_image) 
+
         img_for_transforms = processed_vis.copy()
         img_tensor = get_test_patch_transforms()(image=img_for_transforms)['image'].to(device)
         _, h, w = img_tensor.shape
@@ -91,25 +92,87 @@ if st.button("Run Segmentation"):
             gt_bin = None  # dùng để quyết định không tính F1
 
         # --- Show 1 hàng 4 cột ---
-        col1, col2, col3, col4 = st.columns(4)
+        mask_pil = Image.fromarray(seg_display)           # grayscale (HxW)
+        mask_rgb = mask_pil.convert("RGB")                # convert để lưu PNG chuẩn
+        buf_mask = BytesIO()
+        mask_rgb.save(buf_mask, format="PNG")
+        buf_mask.seek(0)
+
+        # --- Tạo overlay: input image + mask đỏ bán trong suốt ---
+        ori_pil = Image.fromarray(ori_image).convert("RGBA")
+        mask_l = Image.fromarray(seg_display).convert("L")  # dùng làm alpha
+        red_overlay = Image.new("RGBA", ori_pil.size, (255, 0, 0, 120))  # đỏ với alpha 120
+        # đặt alpha của red_overlay bằng mask (255 -> hiển thị, 0 -> trong suốt)
+        red_overlay.putalpha(mask_l)
+        overlay_pil = Image.alpha_composite(ori_pil, red_overlay)
+
+        buf_overlay = BytesIO()
+        overlay_pil.convert("RGB").save(buf_overlay, format="PNG")
+        buf_overlay.seek(0)
+
+        # --- Hiển thị cùng vị trí result và thêm nút download ---
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.caption("Input Image")
             st.image(ori_image, width=300)
         with col2:
             st.caption("Processed Image")
-            # processed_vis có thể là HxW hoặc HxWx3, đảm bảo uint8
             st.image(processed_vis, width=300)
         with col3:
-            st.caption(f"Segmentation Result ({selected_model})")
+            st.caption("Result")
             st.image(seg_display, width=300)
+            # Nút tải xuống (dùng emoji như "sticker")
+            st.download_button(
+                label="⬇️ Tải mask (PNG)",
+                data=buf_mask.getvalue(),
+                file_name=f"{model_name}_mask.png",
+                mime="image/png"
+            )
+            st.download_button(
+                label="🖼️ Tải overlay (PNG)",
+                data=buf_overlay.getvalue(),
+                file_name=f"{model_name}_overlay.png",
+                mime="image/png"
+            )
         with col4:
             st.caption("Ground Truth")
             st.image(gt_display, width=300)
+        with col5:
+            error_map = create_error_map(pred_mask, gt_bin)
+            overlay_cmp = overlay_error_map(ori_image, error_map, alpha=0.6)
+            st.caption("Overlay (TP/FP/FN)")
+            st.image(error_map, width=250)
+        if uploaded_gt is not None: # flatten và tính F1 binary 
+            f1 = f1_score(gt_bin.flatten(), pred_mask.flatten(), average='binary') 
+            recall = recall_score(gt_bin.flatten(), pred_mask.flatten(), average='binary') 
+            st.write(f"Recall: {recall:.4f}") 
+            st.write(f"F1 Score: {f1:.4f}") 
+        else: st.info("Không có Ground Truth — Không tính score được.")
+        zip_buffer = BytesIO()
 
-        # --- Tính F1 nếu có GT ---
-        if uploaded_gt is not None:
-            # flatten và tính F1 binary
-            f1 = f1_score(gt_bin.flatten(), pred_mask.flatten(), average='binary')
-            st.write(f"F1 Score: {f1:.4f}")
-        else:
-            st.info("Không có Ground Truth — Không tính score được.")
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+            zipf.writestr("01_input.png", save_png_to_bytes(ori_image))
+            zipf.writestr("02_processed.png", save_png_to_bytes(processed_vis))
+            zipf.writestr("03_prediction_mask.png", save_png_to_bytes(seg_display))
+            zipf.writestr("04_prediction_overlay.png", save_png_to_bytes(overlay_pil))
+            
+            if uploaded_gt is not None:
+                zipf.writestr("05_ground_truth.png", save_png_to_bytes(gt_display))
+                zipf.writestr("06_error_map.png", save_png_to_bytes(error_map))
+                
+        st.download_button(
+            label="📦 Tải TẤT CẢ kết quả (ZIP)",
+            data=zip_buffer.getvalue(),
+            file_name=f"{model_name}_segmentation_results.zip",
+            mime="application/zip"
+        )
+
+
+        zip_buffer.seek(0)
+
+st.markdown("""
+**Legend:**
+- 🟩 Green: True Positive (Correct)
+- 🟥 Red: False Positive (Over-segmentation)
+- 🟦 Blue: False Negative (Missed)
+""")

@@ -7,8 +7,7 @@ import inspect
 from PIL import Image
 import kornia
 import torch.nn as nn
-
-import torch.nn as nn
+from io import BytesIO
 
 def init_weights_kaiming(m):
     if isinstance(m, (nn.Conv2d, nn.Linear)):
@@ -158,3 +157,57 @@ def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
 def reverse_to_original_image(patches, original_size,patch_size,stride):
     original_image = kornia.contrib.combine_tensor_patches(patches, original_size=original_size,window_size=patch_size,stride=stride,allow_auto_unpadding=False)
     return original_image
+
+
+def create_error_map(pred_mask, gt_mask):
+    """
+    pred_mask, gt_mask: (H, W) uint8 {0,1}
+    return: (H, W, 3) uint8 RGB
+    """
+    h, w = pred_mask.shape
+    error_map = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # True Positive (Green)
+    tp = (pred_mask == 1) & (gt_mask == 1)
+    error_map[tp] = [0, 255, 0]
+
+    # False Positive (Red)
+    fp = (pred_mask == 1) & (gt_mask == 0)
+    error_map[fp] = [255, 0, 0]
+
+    # False Negative (Blue)
+    fn = (pred_mask == 0) & (gt_mask == 1)
+    error_map[fn] = [0, 0, 255]
+
+    # True Negative giữ màu đen
+    return error_map
+
+
+def overlay_error_map(image, error_map, alpha=0.6):
+    """
+    image: (H,W,3) uint8
+    error_map: (H,W,3) uint8
+    """
+    overlay = image.copy()
+    mask = np.any(error_map != 0, axis=-1)
+
+    overlay[mask] = (
+        (1 - alpha) * overlay[mask] +
+        alpha * error_map[mask]
+    ).astype(np.uint8)
+
+    return overlay
+
+def save_png_to_bytes(img):
+    """
+    img: np.ndarray (H,W) or (H,W,3) uint8
+         or PIL.Image
+    return: bytes PNG
+    """
+    buf = BytesIO()
+    if isinstance(img, np.ndarray):
+        Image.fromarray(img).save(buf, format="PNG")
+    else:
+        img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.getvalue()
