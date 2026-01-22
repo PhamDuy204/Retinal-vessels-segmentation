@@ -11,14 +11,36 @@ from transforms import get_test_patch_transforms
 from sklearn.metrics import f1_score, recall_score
 from io import BytesIO
 import zipfile
+def choice_model(model_name_in):
 
+    model_names= ['dysta_net','edae_net','fr_net','gtdla','our_net','sfit_net','unet']
+    for model_name in model_names:
+        if model_name in model_name_in:
+            return model_name
+
+def preprocessing_img(path):
+    mean_=73.00342685729963
+    std_=54.45611922239714
+    if isinstance(path,str):
+        img=np.array(Image.open(path).convert('RGB'))
+    else:
+        img=path
+
+    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8,8))
+
+    gray=convert_gray(img)
+    gray=(gray-mean_)/std_
+    gray=((gray-np.min(gray))/(np.max(gray)-np.min(gray)))*255
+    
+    gray=clahe.apply(np.array(gray,dtype=np.uint8))
+    return unsharp_mask(gray)
 # --- Danh sách model có sẵn ---
 model_lst = os.listdir('checkpoints/')
 st.title("Segmentation Demo App")
 
 # Chọn model
 selected_model = st.selectbox("Chọn model:", model_lst, index=0)
-model_name = selected_model.replace('.pt', '')
+model_name = choice_model(selected_model.replace('.pt', ''))
 
 # if model_name == our_net_woLoss:
 # Load model class and prepare sys.modules for unpickling
@@ -28,7 +50,7 @@ load_model_class(model_name if model_name != 'our_net_woLoss' else 'our_net')
 # Now load the checkpoint using torch.load
 # sys.modules has the correct model modules already loaded
 model = torch.load(
-    f'checkpoints/{model_name}.pt',
+    f'checkpoints/{selected_model}',
     map_location='cuda' if torch.cuda.is_available() else 'cpu',
     weights_only=False
 )
@@ -47,7 +69,7 @@ if st.button("Run Segmentation"):
         # --- Input image ---
         ori_image = np.array(Image.open(uploaded_image).convert('RGB'))
 
-        processed_vis = preprocessing_img(ori_image) 
+        processed_vis = preprocessing_img(ori_image) if model_name != 'our_net' else cv2.cvtColor(ori_image, cv2.COLOR_RGB2GRAY)
 
         img_for_transforms = processed_vis.copy()
         img_tensor = get_test_patch_transforms()(image=img_for_transforms)['image'].to(device)

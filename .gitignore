@@ -14,7 +14,7 @@ venv/
 *.pkl
 *.h5
 *.ckpt
-*.ipynb
+
 
 .vscode/
 
