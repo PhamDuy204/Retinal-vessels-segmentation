@@ -82,7 +82,7 @@ class CAB_1(nn.Module):
             nn.Conv2d(mid, in_channels, 1, bias=False),
         )
 
-    def forward(self, x):
+    def forward(self, x,n=1):
         """
         x: (B, C, H, W)
         returns: (B, C, H, W) with residual
@@ -96,14 +96,14 @@ class CAB_1(nn.Module):
         attn_logits = F.sigmoid(torch.matmul(q, k.transpose(-1, -2))/ scale)
 
         out = attn_logits*v
+        for _ in range(n):
+            q = self.q(out)                      
+            k = self.k(out)
+            v = self.v(out)
 
-        q = self.q(out)                      
-        k = self.k(out)
-        v = self.v(out)
+            attn_logits = F.sigmoid(torch.matmul(q, k.transpose(-1, -2)))
 
-        attn_logits = F.sigmoid(torch.matmul(q, k.transpose(-1, -2)))
-
-        out = attn_logits*v
+            out = attn_logits*v
 
         out =  self.out_norm(self.pj(out)+x)
         ff_out = self.ff(out)+out
