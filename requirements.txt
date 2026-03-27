@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
 torch
 torchvision
 albumentations==2.0.8
