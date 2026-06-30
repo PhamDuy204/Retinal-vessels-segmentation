@@ -1,0 +1,38 @@
+{
+  "experiment_id": "retinal-vessels-statistics-v1",
+  "models": [
+    "unet",
+    "custom_unet",
+    "fr_net",
+    "edae_net",
+    "dysta_net",
+    "gtdla",
+    "sfit_net",
+    "custom_net",
+    "our_net"
+  ],
+  "seeds": [42, 123, 456, 789, 2024],
+  "datasets": [
+    "CHASEDB_1_patches",
+    "DRIVE_patches",
+    "DRIVE_RANDOM_SEED42_patches",
+    "REVERSED_DRIVE_patches",
+    "STARE_F1_patches",
+    "val_on_STARE_F1_and_train_on_DRIVE_with_patches",
+    "val_on_DRIVE_and_train_on_STARE_F1_with_patches"
+  ],
+  "common_train_args": {
+    "batch_size": 4,
+    "epochs": 100,
+    "loss": "abe_dice_loss",
+    "learning_rate": 0.001,
+    "patches": 500,
+    "patch_size": 64,
+    "train_type": "patch",
+    "type_split": "window",
+    "output_root": "outputs",
+    "wandb_mode": "online"
+  },
+  "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
+  "wandb_project": "Retinal-Vessels-Segmentation"
+}

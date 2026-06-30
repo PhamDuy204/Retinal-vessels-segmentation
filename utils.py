@@ -8,6 +8,7 @@ from PIL import Image
 import kornia
 import torch.nn as nn
 from io import BytesIO
+from functools import lru_cache
 
 def init_weights_kaiming(m):
     if isinstance(m, (nn.Conv2d, nn.Linear)):
@@ -49,9 +50,12 @@ def apply_gamma_correction(orimage, gamma=1.2):
     table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
     return cv2.LUT(np.array(orimage.copy(), dtype = np.uint8), table)
 
-def preprocessing_img(path):
+def _preprocessing_img_impl(path, model_name):
     mean_=73.00342685729963
     std_=54.45611922239714
+    if model_name=='our_net':
+        mean_=0
+        std_=1
     if isinstance(path,str):
         img=np.array(Image.open(path).convert('RGB'))
     else:
@@ -65,6 +69,26 @@ def preprocessing_img(path):
     
     gray=clahe.apply(np.array(gray,dtype=np.uint8))
     return unsharp_mask(gray)
+
+
+@lru_cache(maxsize=None)
+def _cached_preprocessing_img(path, model_name):
+    """Cache deterministic preprocessing; callers always receive a copy."""
+    return _preprocessing_img_impl(path, model_name)
+
+
+def preprocessing_img(path,model_name = 'our_net'):
+    if isinstance(path, str):
+        return _cached_preprocessing_img(path, model_name).copy()
+    return _preprocessing_img_impl(path, model_name).copy()
+
+
+def clear_preprocessing_cache():
+    _cached_preprocessing_img.cache_clear()
+
+
+def preprocessing_cache_info():
+    return _cached_preprocessing_img.cache_info()
 
 def get_small_vessel(mask,kernel=7):
     if type(mask) is not torch.Tensor:
@@ -86,11 +110,14 @@ def compute_enahnce_img(img,mask,kernel=7):
     return cp_img*(1-small_vessel) + small_vessel*fill_value
 
 def check_model_forward_args(model):
-    forward_fn = model.forward
-    sig = inspect.signature(forward_fn)
-
-    num_params = len(sig.parameters) - 1
-    return num_params
+    while hasattr(model, "_orig_mod"):
+        model = model._orig_mod
+    signature = inspect.signature(model.forward)
+    return sum(
+        parameter.kind
+        in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        for parameter in signature.parameters.values()
+    )
 
 def split_patch(image,num_patches=1000,size=64,boxes=None):
     if len(image.shape)<3:

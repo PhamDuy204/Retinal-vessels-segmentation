@@ -33,7 +33,7 @@ import random
 #         return image, mask,edge
     
 class CustomTrainDataset(Dataset):
-    def __init__(self,root_path,img_transforms=None,with_patches = False,num_patches=500,patch_size=64,type_split='random'):
+    def __init__(self,root_path,img_transforms=None,with_patches = False,num_patches=500,patch_size=64,type_split='random',model_name=''):
         self.image_paths =  sorted(glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
                             + glob.glob(root_path + '/images/*.ppm'))
         self.mask_paths = sorted(glob.glob(root_path + '/mask/*.png')+glob.glob(root_path + '/mask/*.tif')\
@@ -46,6 +46,7 @@ class CustomTrainDataset(Dataset):
         self.patch_size=patch_size
         self.type_split=type_split
         self.index_patch=[[]for _ in range(len(self.image_paths))]
+        self.model_name = model_name
     def get_name(self):
         return self.name
     def __len__(self):
@@ -54,7 +55,7 @@ class CustomTrainDataset(Dataset):
         image_path = self.image_paths[index]
         mask_path = self.mask_paths[index]
 
-        image = preprocessing_img(image_path)
+        image = preprocessing_img(image_path, model_name=self.model_name)
         mask = mask = np.array(Image.open(mask_path),dtype=np.uint8)
         if (len(mask.shape)==3):mask=mask[:,:,0]
         mask = np.ceil(mask/255).astype(np.uint8)
@@ -133,7 +134,7 @@ class CustomTrainDataset(Dataset):
         }
     
 class CustomTestDataset(Dataset):
-    def __init__(self,root_path,img_transforms=None,type_split='random'):
+    def __init__(self,root_path,img_transforms=None,type_split='random',model_name=''):
         self.image_paths =  sorted(glob.glob(root_path + '/images/*.jpg')+glob.glob(root_path + '/images/*.tif')\
                             + glob.glob(root_path + '/images/*.ppm'))
         self.mask_paths = sorted(glob.glob(root_path + '/mask/*.png')+glob.glob(root_path + '/mask/*.tif')\
@@ -142,6 +143,7 @@ class CustomTestDataset(Dataset):
         self.image_transforms = img_transforms
         self.name = root_path.split('/')[-2]
         self.type_split=type_split
+        self.model_name = model_name
     def get_name(self):
         return self.name
     def __len__(self):
@@ -149,7 +151,7 @@ class CustomTestDataset(Dataset):
     def __getitem__(self,index):
         image_path = self.image_paths[index]
         mask_path = self.mask_paths[index]
-        image = preprocessing_img(image_path)
+        image = preprocessing_img(image_path,model_name=self.model_name)
         mask = mask = np.array(Image.open(mask_path),dtype=np.uint8)
         if (len(mask.shape)==3):mask=mask[:,:,0]
         mask = np.ceil(mask/255).astype(np.uint8)

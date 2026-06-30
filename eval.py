@@ -1,115 +1,269 @@
+from __future__ import annotations
+
+from contextlib import nullcontext
+
 import torch
-from utils import *
-from torchmetrics.classification import Accuracy,BinaryF1Score,\
-                                        AUROC, Recall, Specificity,\
-                                        JaccardIndex,BinaryROC
-from torchmetrics.segmentation import DiceScore
+from skimage.morphology import skeletonize
+from torch.profiler import record_function
+from torchmetrics.classification import AUROC
 from tqdm import tqdm
-# from timm.models.maxxvit import window_partition,window_reverse
-# import kornia
 
-def eval_for_seg(model, val_loader, gpu_id, patch=False,patch_size=64,type_split='random'):
+from utils import (
+    check_model_forward_args,
+    extract_patches_with_target_count,
+    mirror_padding_v2,
+    reverse_to_original_image,
+)
+
+
+EVALUATION_THRESHOLD = 0.487
+
+
+def _profile_region(enabled: bool, name: str):
+    return record_function(name) if enabled else nullcontext()
+
+
+def metrics_from_confusion(
+    true_positive: torch.Tensor,
+    true_negative: torch.Tensor,
+    false_positive: torch.Tensor,
+    false_negative: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Match the existing binary torchmetrics formulas from one confusion matrix."""
+
+    def divide(numerator: torch.Tensor, denominator: torch.Tensor) -> torch.Tensor:
+        return torch.where(
+            denominator > 0,
+            numerator.float() / denominator.float(),
+            torch.zeros((), dtype=torch.float32, device=denominator.device),
+        )
+
+    total = true_positive + true_negative + false_positive + false_negative
+    accuracy = divide(true_positive + true_negative, total)
+    f1 = divide(2 * true_positive, 2 * true_positive + false_positive + false_negative)
+    iou = divide(true_positive, true_positive + false_positive + false_negative)
+    recall = divide(true_positive, true_positive + false_negative)
+    specificity = divide(true_negative, true_negative + false_positive)
+    return accuracy, f1, iou, recall, specificity
+
+
+def centerline_dice(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+) -> float:
+    """Compute hard centerline Dice (clDice/cDice) for one binary image.
+
+    The score is the harmonic mean of topology precision and topology
+    sensitivity, using morphological skeletons of the prediction and target.
+    """
+    prediction_mask = prediction.detach().bool().cpu().numpy()
+    target_mask = target.detach().bool().cpu().numpy()
+    prediction_skeleton = skeletonize(prediction_mask)
+    target_skeleton = skeletonize(target_mask)
+
+    prediction_centerline_pixels = int(prediction_skeleton.sum())
+    target_centerline_pixels = int(target_skeleton.sum())
+    if prediction_centerline_pixels == 0 and target_centerline_pixels == 0:
+        return 1.0
+    if prediction_centerline_pixels == 0 or target_centerline_pixels == 0:
+        return 0.0
+
+    topology_precision = float(
+        (prediction_skeleton & target_mask).sum() / prediction_centerline_pixels
+    )
+    topology_sensitivity = float(
+        (target_skeleton & prediction_mask).sum() / target_centerline_pixels
+    )
+    denominator = topology_precision + topology_sensitivity
+    if denominator == 0:
+        return 0.0
+    return 2.0 * topology_precision * topology_sensitivity / denominator
+
+
+def _forward_in_batches(
+    model,
+    image: torch.Tensor,
+    edge: torch.Tensor | None,
+    batch_size: int,
+    forward_args: int,
+    amp: bool,
+    profile: bool,
+    pad_final_batch: bool,
+) -> torch.Tensor:
+    if batch_size <= 0:
+        chunk_count = max(image.shape[0] // 128, 1)
+        image_batches = torch.chunk(image, chunk_count, dim=0)
+        edge_batches = (
+            torch.chunk(edge, chunk_count, dim=0)
+            if edge is not None
+            else (None,) * len(image_batches)
+        )
+        outputs = []
+        for image_batch, edge_batch in zip(image_batches, edge_batches):
+            with _profile_region(profile, "evaluation_model_forward"):
+                with torch.amp.autocast("cuda", enabled=amp):
+                    if forward_args == 2:
+                        output = model(image_batch, edge_batch)
+                    else:
+                        output = model(image_batch)
+            outputs.append(output)
+        return torch.cat(outputs, dim=0)
+
+    outputs = []
+    for start in range(0, image.shape[0], batch_size):
+        stop = min(start + batch_size, image.shape[0])
+        image_batch = image[start:stop]
+        edge_batch = edge[start:stop] if edge is not None else None
+        valid_count = stop - start
+        if pad_final_batch and valid_count < batch_size:
+            pad_count = batch_size - valid_count
+            image_padding = image_batch[-1:].expand(pad_count, -1, -1, -1)
+            image_batch = torch.cat((image_batch, image_padding), dim=0)
+            if edge_batch is not None:
+                edge_padding = edge_batch[-1:].expand(pad_count, -1, -1, -1)
+                edge_batch = torch.cat((edge_batch, edge_padding), dim=0)
+
+        with _profile_region(profile, "evaluation_model_forward"):
+            with torch.amp.autocast("cuda", enabled=amp):
+                if forward_args == 2:
+                    output = model(image_batch, edge_batch)
+                else:
+                    output = model(image_batch)
+        outputs.append(output[:valid_count])
+    return torch.cat(outputs, dim=0)
+
+
+def eval_for_seg(
+    model,
+    val_loader,
+    gpu_id,
+    patch=False,
+    patch_size=64,
+    type_split="random",
+    threshold=EVALUATION_THRESHOLD,
+    non_blocking=True,
+    amp=False,
+    profile=False,
+    batch_size=64,
+):
     torch.cuda.set_device(gpu_id)
-    torch.cuda.empty_cache()
+    device = torch.device("cuda", gpu_id)
 
-    acc_metric    = Accuracy(task='binary').cuda()
-    f1_metric     = BinaryF1Score().cuda()
-    jaccard_metric= JaccardIndex(task='binary').cuda()
-    recall_metric = Recall(task='binary').cuda()
-    spec_metric   = Specificity(task='binary').cuda()
-    roc_metric  = BinaryROC().cuda()
-    auroc_metric  = AUROC(task='binary').cuda()
-    dice_metric  = DiceScore(num_classes=2, average='macro').cuda()
+    confusion = torch.zeros(4, dtype=torch.long, device=device)
+    image_dice_scores: list[torch.Tensor] = []
+    image_cdice_scores: list[float] = []
+    auroc_metric = AUROC(task="binary").to(device)
+    forward_args = check_model_forward_args(model)
+    model.eval()
 
     with torch.inference_mode():
-        for sample in tqdm(val_loader):
-            out_sample=[]
-            model.eval()
+        iterator = iter(val_loader)
+        for _ in tqdm(range(len(val_loader))):
+            with _profile_region(profile, "evaluation_data_loading"):
+                sample = next(iterator)
             image, mask, edge = sample.values()
-            image=mirror_padding_v2(image)
-            edge=mirror_padding_v2(edge)
-            B,C,H,W = image.shape
-            image = image.cuda()
-            mask  = mask.cuda()
-            edge  = edge.cuda()
-            stride=None
-            if patch and type_split!='random':
-                # condition=int(H>W)
-                num_patch=((H-patch_size)//32+1,(W-patch_size)//8+1)
-                image,tmp_stride = extract_patches_with_target_count(image,patch_size,num_patch)
-                edge,_ = extract_patches_with_target_count(edge,patch_size,num_patch)
-                stride=tmp_stride
-                if len(image.shape)>4:
-                    image=image.flatten(0,1)
-                    edge=edge.flatten(0,1)
-            #   edge = kornia.contrib.extract_tensor_patches(edge, patch_size, patch_size//4).flatten(0,1)
+            image = mirror_padding_v2(image)
+            if forward_args == 2:
+                edge = mirror_padding_v2(edge)
+            else:
+                edge = None
+            image_count, channels, height, width = image.shape
+            image = image.to(device, non_blocking=non_blocking)
+            mask = mask.to(device, non_blocking=non_blocking)
+            if edge is not None:
+                edge = edge.to(device, non_blocking=non_blocking)
 
-                # image = window_partition(image.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
-                # edge = window_partition(edge.permute(0,2,3,1).contiguous(),[patch_size,patch_size]).permute(0,3,1,2).contiguous()
-            
-            chunk_size = max(image.shape[0]//128,1)
-            # print(chunk_size)
-            chunk_image = torch.chunk(image,chunk_size,0)
-            chunk_edge = torch.chunk(edge,chunk_size,0)
-            for chunk in zip(chunk_image,chunk_edge):
-                c_image,c_edge=chunk
-                if check_model_forward_args(model) == 2:
-                    prob = model(c_image, c_edge)
-                else:
-                    prob = model(c_image)
-                out_sample.append(prob)
-            prob= torch.cat(out_sample,0)
-            if patch:
-                # prob = kornia.contrib.combine_tensor_patches(prob.view(B,-1,1,patch_size,patch_size), original_size=(H,W),window_size=patch_size,stride=patch_size//4)
-                # prob=window_reverse(prob.permute(0,2,3,1).contiguous(),[patch_size,patch_size],[H,W]).permute(0,3,1,2).contiguous()
-                # if type_split=='random':
-                #     h, w = mask.shape[-2:]
-                #     prob = prob[:,:,:h,:w]
-                if stride is not None:
-                    prob = prob.view(B,-1,1,patch_size,patch_size)
-                    prob_1=prob
+            stride = None
+            patch_inference = patch and type_split != "random"
+            if patch_inference:
+                patch_grid = (
+                    (height - patch_size) // 32 + 1,
+                    (width - patch_size) // 8 + 1,
+                )
+                image, stride = extract_patches_with_target_count(
+                    image, patch_size, patch_grid
+                )
+                if edge is not None:
+                    edge, _ = extract_patches_with_target_count(
+                        edge, patch_size, patch_grid
+                    )
+                if len(image.shape) > 4:
+                    image = image.flatten(0, 1)
+                    if edge is not None:
+                        edge = edge.flatten(0, 1)
 
-                    prob=reverse_to_original_image(prob,(H,W),patch_size,stride)
-                    prob_1=reverse_to_original_image(prob_1,(H,W),patch_size,stride)
-            # torch.cuda.empty_cache()        
-            # prob_2 =model(image)
+            probability_map = _forward_in_batches(
+                model,
+                image,
+                edge,
+                batch_size,
+                forward_args,
+                amp,
+                profile,
+                pad_final_batch=patch_inference,
+            )
 
-            h, w = mask.shape[-2:]
+            # Reconstruct once; the old prob/prob_1 paths were identical.
+            if stride is not None:
+                probability_map = probability_map.view(
+                    image_count, -1, 1, patch_size, patch_size
+                )
+                probability_map = reverse_to_original_image(
+                    probability_map,
+                    (height, width),
+                    patch_size,
+                    stride,
+                )
 
-            # prob_2=prob_2[:,:,:h,:w]
-            prob = prob[:,:,:h,:w]
-            prob= prob.squeeze().detach().cuda().flatten()
+            target_height, target_width = mask.shape[-2:]
+            cropped_probability_map = probability_map[
+                :, :, :target_height, :target_width
+            ]
+            prediction_maps = cropped_probability_map >= threshold
+            target_maps = mask[:, :target_height, :target_width] >= 0.5
+            for prediction_map, target_map in zip(
+                prediction_maps[:, 0], target_maps
+            ):
+                image_cdice_scores.append(
+                    centerline_dice(prediction_map, target_map)
+                )
 
-            prob_1 = prob_1[:,:,:h,:w]
-            prob_1= prob_1.squeeze().detach().cuda().flatten()
+            probabilities = cropped_probability_map.flatten()
+            target = target_maps.flatten().long()
+            prediction = prediction_maps.flatten().long()
 
-            mask = mask.squeeze().detach().cuda().flatten()
-            # print(mask.dtype)
-            # print(prob.dtype)
+            prediction_positive = prediction == 1
+            target_positive = target == 1
+            true_positive = (prediction_positive & target_positive).sum()
+            true_negative = ((~prediction_positive) & (~target_positive)).sum()
+            false_positive = (prediction_positive & (~target_positive)).sum()
+            false_negative = ((~prediction_positive) & target_positive).sum()
+            confusion += torch.stack(
+                (true_positive, true_negative, false_positive, false_negative)
+            )
 
-            pred_mask = torch.where(prob_1>=0.487,1,0)
+            dice_denominator = 2 * true_positive + false_positive + false_negative
+            image_dice_scores.append(
+                torch.where(
+                    dice_denominator > 0,
+                    (2 * true_positive).float() / dice_denominator.float(),
+                    torch.full((), torch.nan, device=device),
+                )
+            )
+            auroc_metric.update(probabilities, target)
 
-            acc_metric.update(pred_mask, mask)
-            f1_metric.update(pred_mask, mask)
-            jaccard_metric.update(pred_mask, mask)
-            recall_metric.update(pred_mask, mask)
-            spec_metric.update(pred_mask, mask)
-            auroc_metric.update(prob, mask)
-            roc_metric.update(prob, mask)
-            dice_metric.update(pred_mask.unsqueeze(0).unsqueeze(0).long(), mask.unsqueeze(0).unsqueeze(0).long())
-            torch.cuda.empty_cache()
-
-    fpr, tpr, thresholds = roc_metric.compute()
-    j_scores = tpr - fpr
-    best_idx = torch.argmax(j_scores)
-    best_threshold = thresholds[best_idx]
+    accuracy, f1, iou, recall, specificity = metrics_from_confusion(*confusion)
+    auc = auroc_metric.compute()
+    dice = torch.stack(image_dice_scores).nanmean()
+    cdice = sum(image_cdice_scores) / len(image_cdice_scores)
     return (
-        acc_metric.compute().item(),
-        f1_metric.compute().item(),
-        jaccard_metric.compute().item(),
-        recall_metric.compute().item(),
-        spec_metric.compute().item(),
-        auroc_metric.compute().item(),
-        dice_metric.compute().item(),
-        best_threshold.item()
+        accuracy.item(),
+        f1.item(),
+        iou.item(),
+        recall.item(),
+        specificity.item(),
+        auc.item(),
+        dice.item(),
+        cdice,
+        float(threshold),
     )

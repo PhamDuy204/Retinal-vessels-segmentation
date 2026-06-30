@@ -1,0 +1,13 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128
+stringzilla==3.10.4
+albumentations==2.0.8
+transformers==4.57.6
+scikit-image
+opencv-python-headless
+tqdm
+wandb
+torchmetrics
+ml-collections
+kornia

@@ -3,6 +3,7 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 from modules import SA, CA
 from mamba_ssm import Mamba2
 
@@ -56,7 +57,9 @@ class CAB(nn.Module):
         v_flat = v.permute(0, 2, 3, 1).contiguous().view(b, N, c)
 
 
-        scale = torch.sqrt(torch.tensor(c, dtype=q.dtype, device=q.device))
+        # Shape-derived Python scalar avoids allocating/synchronizing a CUDA
+        # tensor on every forward while preserving the attention formula.
+        scale = math.sqrt(c)
         attn_logits = torch.matmul(q_flat, k_flat.transpose(-1, -2)) / scale
         attn = torch.softmax(attn_logits, dim=-1)  
         out_flat = torch.matmul(attn, v_flat) 
@@ -92,7 +95,7 @@ class CAB_1(nn.Module):
         k = self.k(x)
         v = self.v(x)
 
-        scale = torch.sqrt(torch.tensor(h, dtype=q.dtype, device=q.device))
+        scale = math.sqrt(h)
         attn_logits = F.sigmoid(torch.matmul(q, k.transpose(-1, -2))/ scale)
 
         out = attn_logits*v
