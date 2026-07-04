@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from modules import SA, CA
-from mamba_ssm.modules.mamba2 import Mamba2
+from mamba_ssm.modules.mamba3 import Mamba3
 
 def _same_padding(kernel_size, dilation=1):
     k = kernel_size
@@ -240,7 +240,7 @@ class BottleNeck_2(nn.Module):
         self.rev_pre_norm = get_rmsnorm(dimension)
         self.post_norm = get_rmsnorm(dimension)
 
-        self.mamba = Mamba2(dimension,32, conv_bias=True, d_conv=4, expand=2,norm_before_gate=True)
+        self.mamba = Mamba3(d_model=dimension, d_state=32, headdim=32, is_mimo=True, mimo_rank=4, chunk_size=8, is_outproj_norm=False)
 
         self.out = nn.Sequential(
             nn.Linear(dimension, dimension, bias=False),

@@ -1,0 +1,52 @@
+{
+  "experiment_id": "baseline_beam1_pending_eval35_e60",
+  "models": [
+    "dysta_net",
+    "edae_net",
+    "fr_net",
+    "gtdla",
+    "sfit_net",
+    "unet"
+  ],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    890
+  ],
+  "datasets": [
+    "CHASEDB_1_patches",
+    "DRIVE_patches",
+    "STARE_F1_patches",
+    "STARE_F2_patches",
+    "STARE_F3_patches",
+    "STARE_F4_patches",
+    "STARE_F5_patches"
+  ],
+  "common_train_args": {
+    "batch_size": 4,
+    "epochs": 60,
+    "loss": "bce_loss",
+    "learning_rate": 0.001,
+    "patches": 500,
+    "patch_size": 64,
+    "train_type": "patch",
+    "type_split": "window",
+    "output_root": "outputs",
+    "wandb_mode": "online",
+    "num_workers": 0,
+    "pin_memory": false,
+    "persistent_workers": false,
+    "compile_model": false,
+    "eval_amp": false,
+    "tf32": true,
+    "fast_nondeterministic": true,
+    "eval_batch_size": 1,
+    "eval_every": 1,
+    "eval_start_epoch": 35,
+    "eval_auroc_device": "cpu"
+  },
+  "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
+  "wandb_project": "Retinal-Vessels-Segmentation"
+}

@@ -13,8 +13,8 @@ import modal
 
 APP_NAME = "retinal-vessels-statistics"
 VOLUME_NAME = os.environ.get("MODAL_VOLUME_NAME", "retinal-vessels-statistics")
-WANDB_SECRET_NAME = os.environ.get("MODAL_WANDB_SECRET", "none")
-SECRETS = []
+WANDB_SECRET_NAME = os.environ.get("MODAL_WANDB_SECRET", "wandb-secret")
+SECRETS = [modal.Secret.from_name(WANDB_SECRET_NAME)] if WANDB_SECRET_NAME != "none" else []
 GPU_TYPE = os.environ.get("MODAL_GPU_TYPE", "L4")
 MAX_CONTAINERS = int(os.environ.get("MODAL_MAX_CONTAINERS", "4"))
 CPU_CORES = float(os.environ.get("MODAL_CPU_CORES", "4"))
@@ -227,6 +227,7 @@ def main(
     max_tasks: int = 0,
     dry_run: bool = False,
     wait: bool = False,
+    spawn: bool = False,
 ) -> None:
     experiment_config = load_config(config)
     if experiment_id:
@@ -254,6 +255,10 @@ def main(
         {"task": task, "config": experiment_config}
         for task in tasks
     ]
+    if spawn:
+        calls = [train_task.spawn(payload) for payload in payloads]
+        print(f"Spawned {len(calls)} detached background task calls.")
+        return
     if wait:
         failures = 0
         for result in train_task.map(
@@ -273,5 +278,5 @@ def main(
         if failures:
             raise RuntimeError(f"{failures} Modal task(s) failed")
     else:
-        train_task.spawn_map(payloads)
-        print(f"Submitted {len(tasks)} background task calls.")
+        calls = [train_task.spawn(payload) for payload in payloads]
+        print(f"Spawned {len(calls)} background task calls.")

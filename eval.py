@@ -133,6 +133,60 @@ def _forward_in_batches(
     return torch.cat(outputs, dim=0)
 
 
+def _tta_transforms(mode: str):
+    if mode == "none":
+        return [(lambda x: x, lambda x: x)]
+    if mode == "flips":
+        return [
+            (lambda x: x, lambda x: x),
+            (lambda x: torch.flip(x, (-1,)).contiguous(), lambda x: torch.flip(x, (-1,)).contiguous()),
+            (lambda x: torch.flip(x, (-2,)).contiguous(), lambda x: torch.flip(x, (-2,)).contiguous()),
+            (lambda x: torch.flip(x, (-2, -1)).contiguous(), lambda x: torch.flip(x, (-2, -1)).contiguous()),
+        ]
+    if mode == "d4":
+        transforms = []
+        for k in range(4):
+            transforms.append((
+                lambda x, k=k: torch.rot90(x, k, (-2, -1)).contiguous(),
+                lambda x, k=k: torch.rot90(x, -k, (-2, -1)).contiguous(),
+            ))
+            transforms.append((
+                lambda x, k=k: torch.flip(torch.rot90(x, k, (-2, -1)), (-1,)).contiguous(),
+                lambda x, k=k: torch.rot90(torch.flip(x, (-1,)), -k, (-2, -1)).contiguous(),
+            ))
+        return transforms
+    raise ValueError(f"Unknown TTA mode: {mode}")
+
+
+def _forward_with_tta(
+    model,
+    image: torch.Tensor,
+    edge: torch.Tensor | None,
+    batch_size: int,
+    forward_args: int,
+    amp: bool,
+    profile: bool,
+    pad_final_batch: bool,
+    tta_mode: str,
+) -> torch.Tensor:
+    probability_maps = []
+    for transform, inverse in _tta_transforms(tta_mode):
+        tta_image = transform(image)
+        tta_edge = transform(edge) if edge is not None else None
+        tta_probability = _forward_in_batches(
+            model,
+            tta_image,
+            tta_edge,
+            batch_size,
+            forward_args,
+            amp,
+            profile,
+            pad_final_batch=pad_final_batch,
+        )
+        probability_maps.append(inverse(tta_probability))
+    return torch.stack(probability_maps, dim=0).mean(dim=0)
+
+
 def eval_for_seg(
     model,
     val_loader,
@@ -145,14 +199,21 @@ def eval_for_seg(
     amp=False,
     profile=False,
     batch_size=64,
+    tta_flips=False,
+    tta_mode="none",
+    channels_last=False,
+    auroc_device="cuda",
 ):
     torch.cuda.set_device(gpu_id)
     device = torch.device("cuda", gpu_id)
+    if auroc_device not in {"cuda", "cpu"}:
+        raise ValueError("auroc_device must be 'cuda' or 'cpu'")
+    metric_device = device if auroc_device == "cuda" else torch.device("cpu")
 
     confusion = torch.zeros(4, dtype=torch.long, device=device)
     image_dice_scores: list[torch.Tensor] = []
     image_cdice_scores: list[float] = []
-    auroc_metric = AUROC(task="binary").to(device)
+    auroc_metric = AUROC(task="binary").to(metric_device)
     forward_args = check_model_forward_args(model)
     model.eval()
 
@@ -169,9 +230,13 @@ def eval_for_seg(
                 edge = None
             image_count, channels, height, width = image.shape
             image = image.to(device, non_blocking=non_blocking)
+            if channels_last and image.ndim == 4:
+                image = image.contiguous(memory_format=torch.channels_last)
             mask = mask.to(device, non_blocking=non_blocking)
             if edge is not None:
                 edge = edge.to(device, non_blocking=non_blocking)
+                if channels_last and edge.ndim == 4:
+                    edge = edge.contiguous(memory_format=torch.channels_last)
 
             stride = None
             patch_inference = patch and type_split != "random"
@@ -191,8 +256,13 @@ def eval_for_seg(
                     image = image.flatten(0, 1)
                     if edge is not None:
                         edge = edge.flatten(0, 1)
+                if channels_last:
+                    image = image.contiguous(memory_format=torch.channels_last)
+                    if edge is not None:
+                        edge = edge.contiguous(memory_format=torch.channels_last)
 
-            probability_map = _forward_in_batches(
+            active_tta_mode = "flips" if tta_flips and tta_mode == "none" else tta_mode
+            probability_map = _forward_with_tta(
                 model,
                 image,
                 edge,
@@ -200,7 +270,8 @@ def eval_for_seg(
                 forward_args,
                 amp,
                 profile,
-                pad_final_batch=patch_inference,
+                patch_inference,
+                active_tta_mode,
             )
 
             # Reconstruct once; the old prob/prob_1 paths were identical.
@@ -250,7 +321,10 @@ def eval_for_seg(
                     torch.full((), torch.nan, device=device),
                 )
             )
-            auroc_metric.update(probabilities, target)
+            if auroc_device == "cpu":
+                auroc_metric.update(probabilities.detach().cpu(), target.detach().cpu())
+            else:
+                auroc_metric.update(probabilities, target)
 
     accuracy, f1, iou, recall, specificity = metrics_from_confusion(*confusion)
     auc = auroc_metric.compute()

@@ -15,11 +15,15 @@ def make_data_loader(
     pin_memory=False,
     persistent_workers=False,
     seed=42,
+    prefetch_factor=2,
 ):
     generator = None
     if seed is not None:
         generator = torch.Generator()
         generator.manual_seed(seed)
+    kwargs = {}
+    if num_workers > 0:
+        kwargs["prefetch_factor"] = max(int(prefetch_factor), 1)
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -29,6 +33,7 @@ def make_data_loader(
         persistent_workers=bool(persistent_workers and num_workers > 0),
         worker_init_fn=seed_worker if num_workers > 0 else None,
         generator=generator,
+        **kwargs,
     )
 
 def get_name(concat_datasets):
@@ -50,6 +55,7 @@ def get_all_training_set(
     persistent_workers=False,
     seed=42,
     transform_seed=None,
+    prefetch_factor=2,
 ):
     from transforms import get_train_transforms,get_train_patch_transforms,get_test_transforms,get_test_patch_transforms
     names= sorted([d for d in os.listdir(data_paths) if os.path.isdir(os.path.join(data_paths, d))])
@@ -102,11 +108,11 @@ def get_all_training_set(
                 
             train_loader = make_data_loader(
                 train_set, batch_size, True, num_workers, pin_memory,
-                persistent_workers, seed
+                persistent_workers, seed, prefetch_factor
             )
             val_loader = make_data_loader(
                 val_set, 1, False, num_workers, pin_memory,
-                persistent_workers, seed
+                persistent_workers, seed, prefetch_factor
             )
             suffix = '_patches' if patches else ''
             all_train_methods.append({
@@ -124,11 +130,11 @@ def get_all_training_set(
             train_name  = train_set.get_name()
             train_loader = make_data_loader(
                 train_set, batch_size, True, num_workers, pin_memory,
-                persistent_workers, seed
+                persistent_workers, seed, prefetch_factor
             )
             val_loader = make_data_loader(
                 val_set, 1, False, num_workers, pin_memory,
-                persistent_workers, seed
+                persistent_workers, seed, prefetch_factor
             )
             all_train_methods.append({
                     'train_loader': train_loader,
@@ -145,11 +151,11 @@ def get_all_training_set(
                 train_name=train_set.get_name()
                 train_loader = make_data_loader(
                     train_set, batch_size, True, num_workers, pin_memory,
-                    persistent_workers, seed
+                    persistent_workers, seed, prefetch_factor
                 )
                 val_loader = make_data_loader(
                     val_set, 1, False, num_workers, pin_memory,
-                    persistent_workers, seed
+                    persistent_workers, seed, prefetch_factor
                 )
                 all_train_methods.append({
                         'train_loader': train_loader,

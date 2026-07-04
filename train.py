@@ -78,6 +78,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-e", "--epochs", type=int, default=100)
     parser.add_argument("-lf", "--loss", type=str, default="abe_dice_loss")
     parser.add_argument("-m", "--model", type=str, default="unet")
+    parser.add_argument("--model-width", type=int, default=0, help="Optional width/channels override for models that accept a width argument")
     parser.add_argument("-lr", "--learning_rate", type=float, default=0.001)
     parser.add_argument("-p", "--patches", type=int, default=500)
     parser.add_argument("-ps", "--patch_size", type=int, default=64)
@@ -123,7 +124,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Enable CUDA FP16 autocast only during evaluation",
     )
     parser.add_argument("--eval-batch-size", type=int, default=0)
+    parser.add_argument("--eval-auroc-device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--eval-every", type=int, default=1)
+    parser.add_argument("--eval-start-epoch", type=int, default=1)
+    parser.add_argument("--eval-tta-flips", action="store_true")
+    parser.add_argument("--eval-tta-mode", choices=("none", "flips", "d4"), default="none")
+    parser.add_argument("--ema-decay", type=float, default=0.0)
+    parser.add_argument("--ema-update-every", type=int, default=1)
+    parser.add_argument("--micro-batch-size", type=int, default=0)
+    parser.add_argument("--prefetch-factor", type=int, default=2)
+    parser.add_argument("--channels-last", action="store_true")
+    parser.add_argument("--amp-dtype", choices=("fp16", "bf16"), default="fp16")
     parser.add_argument(
         "--fast-nondeterministic",
         action="store_true",
@@ -137,6 +148,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.epochs < 1:
         parser.error("--epochs must be at least 1")
+    if args.model_width < 0:
+        parser.error("--model-width cannot be negative")
     if args.num_workers < 0:
         parser.error("--num-workers cannot be negative")
     if args.profile_steps < 1:
@@ -145,6 +158,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--eval-batch-size cannot be negative")
     if args.eval_every < 1:
         parser.error("--eval-every must be at least 1")
+    if args.eval_start_epoch < 1:
+        parser.error("--eval-start-epoch must be at least 1")
+    if not 0 <= args.ema_decay < 1:
+        parser.error("--ema-decay must be in [0, 1)")
+    if args.ema_update_every < 1:
+        parser.error("--ema-update-every must be at least 1")
+    if args.micro_batch_size < 0:
+        parser.error("--micro-batch-size cannot be negative")
+    if args.prefetch_factor < 1:
+        parser.error("--prefetch-factor must be at least 1")
     if not args.experiment_id:
         args.experiment_id = generate_experiment_id(args.output_root)
     return args
@@ -246,11 +269,22 @@ class Trainer:
 
     def train(self) -> dict[str, Any]:
         torch.cuda.set_device(self.gpu_id)
+        device = torch.device("cuda", self.gpu_id)
         self.model.cuda()
+        if self.args.channels_last:
+            self.model.to(memory_format=torch.channels_last)
+        amp_dtype = torch.bfloat16 if self.args.amp_dtype == "bf16" else torch.float16
+        ema_model = None
+        if self.args.ema_decay > 0:
+            ema_model = copy.deepcopy(getattr(self.model, "_orig_mod", self.model)).cuda().eval()
+            if self.args.channels_last:
+                ema_model.to(memory_format=torch.channels_last)
+            for parameter in ema_model.parameters():
+                parameter.requires_grad_(False)
         if self.args.wandb_watch:
             wandb.watch(self.model, self.criterion, log="all", log_freq=100)
 
-        scaler = torch.amp.GradScaler("cuda", enabled=self.args.amp)
+        scaler = torch.amp.GradScaler("cuda", enabled=self.args.amp and self.args.amp_dtype == "fp16")
         profiler = TrainingProfiler(
             enabled=self.args.profile,
             steps=self.args.profile_steps,
@@ -262,6 +296,7 @@ class Trainer:
         best_params: dict[str, Any] | None = None
         evaluated_rows: list[dict[str, Any]] = []
         metrics_path = self.run_dir / "epoch_metrics.csv"
+        global_train_step = 0
         with metrics_path.open("w", newline="", encoding="utf-8") as metrics_file:
             writer = csv.DictWriter(metrics_file, fieldnames=EPOCH_FIELDS)
             writer.writeheader()
@@ -282,47 +317,57 @@ class Trainer:
                     # Copy each patch group once instead of issuing one host-to-device
                     # transfer per micro-batch. Keep the CPU-generated permutation so
                     # seeded runs retain the same patch order.
-                    random_index = torch.randperm(image.size(0))
-                    device = torch.device("cuda", self.gpu_id)
                     image = image.to(device, non_blocking=True)
                     mask = mask.to(device, non_blocking=True)
-                    random_index = random_index.to(device, non_blocking=True)
+                    if self.args.channels_last and image.ndim == 4:
+                        image = image.contiguous(memory_format=torch.channels_last)
+                    random_index = torch.randperm(image.size(0), device=device)
                     image = image.index_select(0, random_index)
                     mask = mask.index_select(0, random_index)
                     if self.model_forward_args == 2:
                         edge = edge.to(device, non_blocking=True)
+                        if self.args.channels_last and edge.ndim == 4:
+                            edge = edge.contiguous(memory_format=torch.channels_last)
                         edge = edge.index_select(0, random_index)
                     else:
                         edge = None
-                    if self.args.chunk_size is None:
-                        chunk_size = max(
-                            min(
-                                math.ceil(image.shape[0] / self.args.batch_size),
-                                16 * self.args.batch_size,
-                            ),
-                            1,
+                    if self.args.micro_batch_size > 0:
+                        image_chunks = torch.split(image, self.args.micro_batch_size)
+                        mask_chunks = torch.split(mask, self.args.micro_batch_size)
+                        edge_chunks = (
+                            torch.split(edge, self.args.micro_batch_size)
+                            if edge is not None
+                            else (None,) * len(image_chunks)
                         )
                     else:
-                        chunk_size = self.args.chunk_size
-
-                    image_chunks = torch.chunk(image, chunk_size)
-                    mask_chunks = torch.chunk(mask, chunk_size)
-                    edge_chunks = (
-                        torch.chunk(edge, chunk_size)
-                        if edge is not None
-                        else (None,) * len(image_chunks)
-                    )
+                        if self.args.chunk_size is None:
+                            chunk_size = max(
+                                min(
+                                    math.ceil(image.shape[0] / self.args.batch_size),
+                                    16 * self.args.batch_size,
+                                ),
+                                1,
+                            )
+                        else:
+                            chunk_size = self.args.chunk_size
+                        image_chunks = torch.chunk(image, chunk_size)
+                        mask_chunks = torch.chunk(mask, chunk_size)
+                        edge_chunks = (
+                            torch.chunk(edge, chunk_size)
+                            if edge is not None
+                            else (None,) * len(image_chunks)
+                        )
                     for next_image, next_mask, next_edge in zip(
                         image_chunks, mask_chunks, edge_chunks
                     ):
                         with profiler.region("model_forward"):
-                            with torch.amp.autocast("cuda", enabled=self.args.amp):
+                            with torch.amp.autocast("cuda", enabled=self.args.amp, dtype=amp_dtype):
                                 if self.model_forward_args == 2:
                                     predicted_mask = self.model(next_image, next_edge)
                                 else:
                                     predicted_mask = self.model(next_image)
                         with profiler.region("loss_forward"):
-                            with torch.amp.autocast("cuda", enabled=self.args.amp):
+                            with torch.amp.autocast("cuda", enabled=self.args.amp, dtype=amp_dtype):
                                 loss = self.criterion(predicted_mask, next_mask)
                         loss_value = float(loss.detach())
                         if not math.isfinite(loss_value):
@@ -352,13 +397,28 @@ class Trainer:
                         with profiler.region("optimizer_step"):
                             scaler.step(self.optimizer)
                             scaler.update()
+                        global_train_step += 1
+                        if ema_model is not None and global_train_step % self.args.ema_update_every == 0:
+                            source_model = getattr(self.model, "_orig_mod", self.model)
+                            ema_decay = self.args.ema_decay ** self.args.ema_update_every
+                            with torch.no_grad():
+                                for ema_parameter, source_parameter in zip(
+                                    ema_model.parameters(), source_model.parameters()
+                                ):
+                                    ema_parameter.mul_(ema_decay).add_(
+                                        source_parameter.detach(), alpha=1 - ema_decay
+                                    )
+                                for ema_buffer, source_buffer in zip(
+                                    ema_model.buffers(), source_model.buffers()
+                                ):
+                                    ema_buffer.copy_(source_buffer)
                         training_loss += loss_value
                         profiler.step()
 
                 # Preserve the existing scheduler/evaluation order.
                 self.scheduler.step()
                 current_lr = self.optimizer.param_groups[0]["lr"]
-                should_evaluate = (
+                should_evaluate = epoch >= self.args.eval_start_epoch and (
                     epoch % self.args.eval_every == 0
                     or epoch == self.args.epochs
                 )
@@ -377,9 +437,11 @@ class Trainer:
                     )
                     continue
 
+                evaluation_model = ema_model if ema_model is not None else self.model
+
                 def evaluate():
                     return eval_for_seg(
-                        self.model,
+                        evaluation_model,
                         self.val_loader,
                         self.gpu_id,
                         self.patch,
@@ -388,12 +450,16 @@ class Trainer:
                         threshold=EVALUATION_THRESHOLD,
                         non_blocking=True,
                         amp=self.args.eval_amp,
-                        profile=self.args.profile and epoch == 1,
+                        profile=self.args.profile and epoch == self.args.eval_start_epoch,
                         batch_size=self.args.eval_batch_size,
+                        tta_flips=self.args.eval_tta_flips,
+                        tta_mode=self.args.eval_tta_mode,
+                        channels_last=self.args.channels_last,
+                        auroc_device=self.args.eval_auroc_device,
                     )
 
                 evaluation_result, _evaluation_profile = profile_evaluation(
-                    self.args.profile and epoch == 1,
+                    self.args.profile and epoch == self.args.eval_start_epoch,
                     self.run_dir,
                     evaluate,
                 )
@@ -452,7 +518,7 @@ class Trainer:
 
                 if candidate_is_better(row, best_row):
                     best_row = dict(row)
-                    checkpoint_model = getattr(self.model, "_orig_mod", self.model)
+                    checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
                     best_params = copy.deepcopy(checkpoint_model.state_dict())
 
         profiler.finish()
@@ -542,6 +608,7 @@ def wandb_config(
         "model": args.model,
         "model_folder_name": args.model,
         "model_class": type(model).__name__,
+        "model_width": args.model_width or None,
         "model_module_path": model_module_path,
         "dataset": dataset_name,
         "seed": args.seed,
@@ -562,7 +629,17 @@ def wandb_config(
         "amp": args.amp,
         "eval_amp": args.eval_amp,
         "eval_batch_size": args.eval_batch_size,
+        "eval_auroc_device": args.eval_auroc_device,
         "eval_every": args.eval_every,
+        "eval_start_epoch": args.eval_start_epoch,
+        "eval_tta_flips": args.eval_tta_flips,
+        "eval_tta_mode": args.eval_tta_mode,
+        "ema_decay": args.ema_decay,
+        "ema_update_every": args.ema_update_every,
+        "micro_batch_size": args.micro_batch_size,
+        "prefetch_factor": args.prefetch_factor,
+        "channels_last": args.channels_last,
+        "amp_dtype": args.amp_dtype,
         "fast_nondeterministic": args.fast_nondeterministic,
         "tf32": args.tf32,
         "compile_model": args.compile_model,
@@ -625,6 +702,7 @@ def gpu_worker(
                         args.pin_memory,
                         args.persistent_workers,
                         args.seed,
+                        args.prefetch_factor,
                     )
                     val_loader = make_data_loader(
                         info["val_loader"].dataset,
@@ -634,6 +712,7 @@ def gpu_worker(
                         args.pin_memory,
                         args.persistent_workers,
                         args.seed,
+                        args.prefetch_factor,
                     )
                     patch = bool(info["patches"])
 
@@ -642,7 +721,16 @@ def gpu_worker(
                     model_class = load_model_class(args.model)
                     set_seed(args.seed)
                     configure_cuda_runtime(args.fast_nondeterministic)
-                    model = model_class(1, 1).cuda()
+                    model_kwargs = {}
+                    if args.model_width > 0:
+                        if "width" not in inspect.signature(model_class).parameters:
+                            raise RuntimeError(
+                                f"--model-width was set, but {args.model} does not accept a width argument"
+                            )
+                        model_kwargs["width"] = args.model_width
+                    model = model_class(1, 1, **model_kwargs).cuda()
+                    if args.channels_last:
+                        model.to(memory_format=torch.channels_last)
                     model_module_path = str(Path(inspect.getfile(model_class)).resolve())
                     expected_module_path = str(
                         (Path(__file__).parent / "models" / args.model / f"{args.model}.py").resolve()
@@ -653,9 +741,9 @@ def gpu_worker(
                             f"--model {args.model!r} resolved to {model_module_path}, "
                             f"expected {expected_module_path}"
                         )
-                    if args.model == "our_net" and not 900_000 <= num_parameters <= 1_050_000:
+                    if args.model == "our_net" and not 900_000 <= num_parameters <= 9_000_000:
                         raise RuntimeError(
-                            f"our_net parameter count {num_parameters:,} is outside the expected ~0.96M range"
+                            f"our_net parameter count {num_parameters:,} is outside the expected 0.9M-9.0M range"
                         )
                     config = wandb_config(
                         args,
@@ -779,6 +867,7 @@ def main(argv: list[str] | None = None) -> int:
         False,
         None,
         args.seed,
+        args.prefetch_factor,
     )
     datasets = filter_datasets(all_datasets, args.datasets)
     if args.resume:

@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "experiment_id": "Retinal_training_revision",
+      "model": "edae_net",
+      "seed": 890,
+      "dataset": "CHASEDB_1_patches,DRIVE_patches,STARE_F1_patches,STARE_F2_patches,STARE_F3_patches,STARE_F4_patches,STARE_F5_patches"
+    },
+    {
+      "experiment_id": "Retinal_training_revision",
+      "model": "dysta_net",
+      "seed": 789,
+      "dataset": "CHASEDB_1_patches,DRIVE_patches,STARE_F1_patches,STARE_F2_patches,STARE_F3_patches,STARE_F4_patches,STARE_F5_patches"
+    },
+    {
+      "experiment_id": "Retinal_training_revision",
+      "model": "unet",
+      "seed": 456,
+      "dataset": "CHASEDB_1_patches,DRIVE_patches,STARE_F1_patches,STARE_F2_patches,STARE_F3_patches,STARE_F4_patches,STARE_F5_patches"
+    },
+    {
+      "experiment_id": "Retinal_training_revision",
+      "model": "sfit_net",
+      "seed": 123,
+      "dataset": "CHASEDB_1_patches,DRIVE_patches,STARE_F1_patches,STARE_F2_patches,STARE_F3_patches,STARE_F4_patches,STARE_F5_patches"
+    },
+    {
+      "experiment_id": "Retinal_training_revision",
+      "model": "gtdla",
+      "seed": 42,
+      "dataset": "CHASEDB_1_patches,DRIVE_patches,STARE_F1_patches,STARE_F2_patches,STARE_F3_patches,STARE_F4_patches,STARE_F5_patches"
+    },
+    {
+      "experiment_id": "Retinal_training_revision",
+      "model": "gtdla",
+      "seed": 890,
+      "dataset": "CHASEDB_1_patches,DRIVE_patches,STARE_F1_patches,STARE_F2_patches,STARE_F3_patches,STARE_F4_patches,STARE_F5_patches"
+    },
+    {
+      "experiment_id": "Retinal_training_revision",
+      "model": "fr_net",
+      "seed": 789,
+      "dataset": "CHASEDB_1_patches,DRIVE_patches,STARE_F1_patches,STARE_F2_patches,STARE_F3_patches,STARE_F4_patches,STARE_F5_patches"
+    }
+  ]
+}

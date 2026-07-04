@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 
 class MultiScopeLoss(nn.Module):
-    SCOPES = ((3, 1), (5, 0), (7, 0))
+    SCOPES = ((8, 0.2), (16, 0.3), (32, 0.5))
 
     def forward(self, pred, truth):
         batch_size = truth.shape[0]
