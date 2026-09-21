@@ -1,30 +1,28 @@
 {
-  "experiment_id": "retinal-vessels-statistics-v1",
+  "experiment_id": "sgma-net-repro",
   "models": [
     "unet",
-    "custom_unet",
     "fr_net",
+    "gtdla",
     "edae_net",
     "dysta_net",
-    "gtdla",
     "sfit_net",
-    "custom_net",
     "our_net"
   ],
-  "seeds": [42, 123, 456, 789, 2024],
+  "seeds": [42, 123, 456, 789, 890],
   "datasets": [
-    "CHASEDB_1_patches",
     "DRIVE_patches",
-    "DRIVE_RANDOM_SEED42_patches",
-    "REVERSED_DRIVE_patches",
+    "CHASEDB_1_patches",
     "STARE_F1_patches",
-    "val_on_STARE_F1_and_train_on_DRIVE_with_patches",
-    "val_on_DRIVE_and_train_on_STARE_F1_with_patches"
+    "STARE_F2_patches",
+    "STARE_F3_patches",
+    "STARE_F4_patches",
+    "STARE_F5_patches"
   ],
   "common_train_args": {
     "batch_size": 4,
     "epochs": 100,
-    "loss": "abe_dice_loss",
+    "loss": "our_loss",
     "learning_rate": 0.001,
     "patches": 500,
     "patch_size": 64,

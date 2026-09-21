@@ -10,8 +10,9 @@ from tqdm import tqdm
 
 from utils import (
     check_model_forward_args,
-    extract_patches_with_target_count,
+    extract_patches_with_stride,
     mirror_padding_v2,
+    pad_to_patch_grid,
     reverse_to_original_image,
 )
 
@@ -223,11 +224,20 @@ def eval_for_seg(
             with _profile_region(profile, "evaluation_data_loading"):
                 sample = next(iterator)
             image, mask, edge = sample.values()
-            image = mirror_padding_v2(image)
-            if forward_args == 2:
-                edge = mirror_padding_v2(edge)
+            patch_inference = patch and type_split != "random"
+            if patch_inference:
+                image = pad_to_patch_grid(image, patch_size, stride=patch_size // 2)
+                if forward_args == 2:
+                    edge = pad_to_patch_grid(edge, patch_size, stride=patch_size // 2)
+                else:
+                    edge = None
             else:
-                edge = None
+                image = mirror_padding_v2(image)
+                if forward_args == 2:
+                    edge = mirror_padding_v2(edge)
+                else:
+                    edge = None
+
             image_count, channels, height, width = image.shape
             image = image.to(device, non_blocking=non_blocking)
             if channels_last and image.ndim == 4:
@@ -239,23 +249,17 @@ def eval_for_seg(
                     edge = edge.contiguous(memory_format=torch.channels_last)
 
             stride = None
-            patch_inference = patch and type_split != "random"
             if patch_inference:
-                patch_grid = (
-                    (height - patch_size) // 32 + 1,
-                    (width - patch_size) // 8 + 1,
-                )
-                image, stride = extract_patches_with_target_count(
-                    image, patch_size, patch_grid
+                image, stride = extract_patches_with_stride(
+                    image, patch_size, stride=patch_size // 2
                 )
                 if edge is not None:
-                    edge, _ = extract_patches_with_target_count(
-                        edge, patch_size, patch_grid
+                    edge, _ = extract_patches_with_stride(
+                        edge, patch_size, stride=patch_size // 2
                     )
-                if len(image.shape) > 4:
-                    image = image.flatten(0, 1)
-                    if edge is not None:
-                        edge = edge.flatten(0, 1)
+                image = image.flatten(0, 1)
+                if edge is not None:
+                    edge = edge.flatten(0, 1)
                 if channels_last:
                     image = image.contiguous(memory_format=torch.channels_last)
                     if edge is not None:

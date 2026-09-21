@@ -50,37 +50,51 @@ def apply_gamma_correction(orimage, gamma=1.2):
     table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
     return cv2.LUT(np.array(orimage.copy(), dtype = np.uint8), table)
 
-def _preprocessing_img_impl(path, model_name):
-    mean_=73.00342685729963
-    std_=54.45611922239714
-    if model_name=='our_net':
-        mean_=0
-        std_=1
-    if isinstance(path,str):
-        img=np.array(Image.open(path).convert('RGB'))
+def _preprocessing_img_impl(path):
+    """Paper preprocessing shared by every model.
+
+    RGB -> grayscale -> per-image z-score -> CLAHE -> unsharp masking.
+    The z-scored image is linearly mapped to uint8 only because OpenCV CLAHE
+    operates on 8-bit single-channel images.
+    """
+    if isinstance(path, str):
+        img = np.array(Image.open(path).convert("RGB"))
     else:
-        img=path
+        img = np.asarray(path)
 
-    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8,8))
+    gray = convert_gray(img).astype(np.float32)
+    std = float(gray.std())
+    if std > 1e-8:
+        gray = (gray - float(gray.mean())) / std
+    else:
+        gray = gray - float(gray.mean())
 
-    gray=convert_gray(img)
-    gray=(gray-mean_)/std_
-    gray=((gray-np.min(gray))/(np.max(gray)-np.min(gray)))*255
-    
-    gray=clahe.apply(np.array(gray,dtype=np.uint8))
+    min_value = float(gray.min())
+    max_value = float(gray.max())
+    if max_value > min_value:
+        gray = (gray - min_value) / (max_value - min_value)
+    else:
+        gray = np.zeros_like(gray)
+    gray = np.round(gray * 255.0).astype(np.uint8)
+
+    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
     return unsharp_mask(gray)
 
 
 @lru_cache(maxsize=None)
-def _cached_preprocessing_img(path, model_name):
-    """Cache deterministic preprocessing; callers always receive a copy."""
-    return _preprocessing_img_impl(path, model_name)
+def _cached_preprocessing_img(path):
+    return _preprocessing_img_impl(path)
 
 
-def preprocessing_img(path,model_name = 'our_net'):
+def preprocessing_img(path, model_name=None):
+    """Return identical preprocessing for all models.
+
+    model_name is accepted only for backward-compatible dataset calls.
+    """
     if isinstance(path, str):
-        return _cached_preprocessing_img(path, model_name).copy()
-    return _preprocessing_img_impl(path, model_name).copy()
+        return _cached_preprocessing_img(path).copy()
+    return _preprocessing_img_impl(path).copy()
 
 
 def clear_preprocessing_cache():
@@ -165,6 +179,35 @@ def mirror_padding_v2(image):
 
 def count_trainable_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def pad_to_patch_grid(img, patch_size=64, stride=32):
+    """Reflection-pad bottom/right so a sliding grid covers the full image."""
+    while img.ndim < 4:
+        img = img.unsqueeze(0)
+    h, w = img.shape[-2:]
+    target_h = max(h, patch_size)
+    target_w = max(w, patch_size)
+    target_h += (stride - (target_h - patch_size) % stride) % stride
+    target_w += (stride - (target_w - patch_size) % stride) % stride
+    pad_h = target_h - h
+    pad_w = target_w - w
+    if pad_h or pad_w:
+        img = F.pad(img, (0, pad_w, 0, pad_h), mode="reflect")
+    return img
+
+
+def extract_patches_with_stride(img, patch_size=64, stride=32):
+    """Extract the fixed overlapping sliding-window grid used in the paper."""
+    while img.ndim < 4:
+        img = img.unsqueeze(0)
+    patches = kornia.contrib.extract_tensor_patches(
+        img,
+        (patch_size, patch_size),
+        stride=(stride, stride),
+        allow_auto_padding=False,
+    )
+    return patches, (stride, stride)
+
 
 def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
     while len(img.shape)<4:

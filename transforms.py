@@ -26,16 +26,11 @@ def get_test_transforms():
 
 def get_train_patch_transforms():
     return A.Compose([
-        A.Rotate(limit=45, p=0.7),
-        A.HorizontalFlip(p=0.7),
-        A.VerticalFlip(p=0.7),
-        
-        A.Compose([
-            A.HorizontalFlip(p=1.0),
-            A.VerticalFlip(p=1.0)
-        ], p=0.5),
-        A.Normalize(mean=(0.,),std=(1.,)),
-        ToTensorV2()
+        A.RandomRotate90(p=0.5),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.Normalize(mean=(0.0,), std=(1.0,)),
+        ToTensorV2(),
     ])
 
 def get_test_patch_transforms():

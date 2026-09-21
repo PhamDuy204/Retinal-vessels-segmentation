@@ -9,7 +9,7 @@ class SegModel(SGMANet):
             in_channels,
             out_channels,
             width,
-            use_rhma=False,
+            use_rhma=True,
             use_sag=False,
             use_mdsa=False,
             use_sgwl=False,
