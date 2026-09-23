@@ -11,10 +11,6 @@ _loaded_modules = {}  # Track which modules we loaded from which model
 def load_model_class(model_name):
     global _current_model, _loaded_modules
 
-    # Historical configs/checkpoints use the logical name 'our_net'.
-    # Keep those configs unchanged while storing the original implementation
-    # under the clearer physical name 'main_net'.
-    model_name = {"our_net": "main_net"}.get(model_name, model_name)
     
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
