@@ -3,7 +3,7 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from modules import SA, CA
+from modules import SA, CA, FeatureGroupNorm
 from mamba_ssm import Mamba2
 
 def _same_padding(kernel_size, dilation=1):
@@ -31,7 +31,7 @@ class CAB(nn.Module):
         self.k = nn.Conv2d(in_channels, in_channels, 1, bias=False)
         self.v = nn.Conv2d(in_channels, in_channels, 1, bias=False)
         self.pj = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.out_norm = nn.GroupNorm(1,in_channels)
+        self.out_norm = FeatureGroupNorm(1,in_channels)
         mid = max(in_channels * 2, 16)
         self.ff = nn.Sequential(
             nn.Conv2d(in_channels, mid, 1, bias=False),
@@ -77,7 +77,7 @@ class CAB_1(nn.Module):
         self.k = nn.Conv2d(in_channels, in_channels, 1, bias=False)
         self.v = nn.Conv2d(in_channels, in_channels, 1, bias=False)
         self.pj = nn.Conv2d(in_channels, in_channels, 1, bias=False)
-        self.out_norm = nn.GroupNorm(1,in_channels)
+        self.out_norm = FeatureGroupNorm(1,in_channels)
         mid = max(in_channels * 2, 16)
         self.ff = nn.Sequential(
             nn.Conv2d(in_channels, mid, 1, bias=False),
@@ -95,7 +95,7 @@ class CAB_1(nn.Module):
         k = self.k(x)
         v = self.v(x)
 
-        scale = torch.sqrt(torch.tensor(h, dtype=q.dtype, device=q.device))
+        scale = q.new_full((), h).sqrt()
         attn_logits = F.sigmoid(torch.matmul(q, k.transpose(-1, -2))/ scale)
 
         out = attn_logits*v
@@ -219,7 +219,7 @@ class BottleNeck(nn.Module):
         )
 
         self.tsb = TSB(in_channels*2, out_channels) 
-        self.gn = nn.GroupNorm(num_channels=out_channels, 
+        self.gn = FeatureGroupNorm(num_channels=out_channels,
                                num_groups=out_channels, affine=False)
 
     def forward(self, X): 

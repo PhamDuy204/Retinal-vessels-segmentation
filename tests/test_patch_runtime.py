@@ -43,3 +43,12 @@ def test_grid_patch_reconstruction_uses_native_torch_ops(monkeypatch):
     )
 
     torch.testing.assert_close(reconstructed, image, rtol=0, atol=0)
+
+
+def test_half_precision_reconstruction_accumulates_in_float32():
+    torch.manual_seed(11)
+    patches = torch.rand(1, 49, 1, 4, 4, dtype=torch.float16)
+    expected = utils.reverse_to_original_image(patches.float(), (10, 10), 4, (1, 1))
+    actual = utils.reverse_to_original_image(patches, (10, 10), 4, (1, 1))
+    assert actual.dtype == torch.float32
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
