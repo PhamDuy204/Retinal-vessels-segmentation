@@ -4,7 +4,13 @@
     "our_net",
     "edae_net"
   ],
-  "seeds": [42, 123, 456, 789, 2024],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    2024
+  ],
   "datasets": [
     "DRIVE_patches",
     "STARE_F1_patches",
@@ -31,7 +37,9 @@
     "eval_every": 1,
     "compile_model": true,
     "amp": false,
-    "tf32":true
+    "tf32": false,
+    "eval_amp": false,
+    "amp_dtype": "fp32"
   },
   "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
   "wandb_project": "Retinal-Vessels-Segmentation"
