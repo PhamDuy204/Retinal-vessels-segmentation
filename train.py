@@ -144,6 +144,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--tf32", action="store_true", default=False)
     parser.add_argument("--compile-model", action="store_true")
+    parser.add_argument(
+        "--stop-after-epoch",
+        type=int,
+        default=0,
+        help=(
+            "Stop cleanly after this epoch while keeping the original "
+            "--epochs scheduler horizon; 0 disables"
+        ),
+    )
+    parser.add_argument(
+        "--fused-adam",
+        action="store_true",
+        help="Use PyTorch fused CUDA Adam implementation when available",
+    )
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--profile-steps", type=int, default=10)
     parser.add_argument("--resume", action="store_true")
@@ -156,6 +170,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--num-workers cannot be negative")
     if args.profile_steps < 1:
         parser.error("--profile-steps must be at least 1")
+    if args.stop_after_epoch < 0:
+        parser.error("--stop-after-epoch cannot be negative")
     if args.eval_batch_size < 0:
         parser.error("--eval-batch-size cannot be negative")
     if args.eval_every < 1:
@@ -528,6 +544,10 @@ class Trainer:
                     checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
                     best_params = copy.deepcopy(checkpoint_model.state_dict())
 
+                if self.args.stop_after_epoch and epoch >= self.args.stop_after_epoch:
+                    print(f"Stopping cleanly after epoch {epoch} by --stop-after-epoch.")
+                    break
+
         profiler.finish()
 
         if best_row is None or best_params is None:
@@ -650,6 +670,8 @@ def wandb_config(
         "fast_nondeterministic": args.fast_nondeterministic,
         "tf32": args.tf32,
         "compile_model": args.compile_model,
+        "fused_adam": args.fused_adam,
+        "stop_after_epoch": args.stop_after_epoch,
     }
 
 
@@ -787,7 +809,9 @@ def gpu_worker(
                         model = torch.compile(model)
                     # Keep the existing Adam optimizer without weight decay.
                     optimizer = torch.optim.Adam(
-                        model.parameters(), lr=args.learning_rate
+                        model.parameters(),
+                        lr=args.learning_rate,
+                        fused=args.fused_adam,
                     )
                     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                         optimizer, T_max=args.epochs, eta_min=3e-6

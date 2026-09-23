@@ -78,7 +78,7 @@ if st.button("Run Segmentation"):
         # mirror padding, patch extraction and inference (same logic as your original)
         img_tensor = mirror_padding_v2(img_tensor).unsqueeze(0)
         B, C, H, W = img_tensor.shape
-        num_patch = ((H-64)//32+1, (W-64)//8+1)
+        num_patch = patch_grid_from_stride(H, W, patch_size=64, stride=32)
         image_patches, tmp_stride = extract_patches_with_target_count(img_tensor, 64, num_patch)
         if len(image_patches.shape) > 4:
             image_patches = image_patches.flatten(0, 1)

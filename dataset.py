@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from PIL import Image
 import numpy as np
 import glob
+import torch
 from torch.utils.data import Dataset
 from utils import *
 from albumentations.pytorch import ToTensorV2
@@ -63,13 +64,23 @@ class CustomTrainDataset(Dataset):
             t = self.image_transforms(image = image,mask=mask)
             image = t['image']
             mask  = t['mask']
-            edge = ToTensorV2()(image=sobel_transform(image.clone().detach().permute(1,2,0).mean(-1).unsqueeze(-1).cpu().numpy()))['image']
+            needs_edge = self.model_name != 'our_net'
+            edge = (
+                ToTensorV2()(image=sobel_transform(
+                    image.clone().detach().permute(1,2,0).mean(-1).unsqueeze(-1).cpu().numpy()
+                ))['image']
+                if needs_edge
+                else torch.empty((1, 1, 1), dtype=image.dtype)
+            )
             if self.with_patches:
                 # print(image.dtype)
                 if self.type_split=='random':
                     patches_image,boxes = split_patch(image,self.num_patches,self.patch_size)
                     patches_mask,_ = split_patch(mask,self.num_patches,self.patch_size,boxes)
-                    patches_edge,_ = split_patch(edge,self.num_patches,self.patch_size,boxes)
+                    patches_edge = (
+                        split_patch(edge,self.num_patches,self.patch_size,boxes)[0]
+                        if needs_edge else edge
+                    )
                 else:
                     # print(image.shape)
                     image=mirror_padding_v2(image)
@@ -79,7 +90,8 @@ class CustomTrainDataset(Dataset):
                     if len(mask.shape)<3:mask=mask.unsqueeze(0)
                     mask=mirror_padding_v2(mask)
                     # print(mask.shape)
-                    edge=mirror_padding_v2(edge)
+                    if needs_edge:
+                        edge=mirror_padding_v2(edge)
                     # print(edge.shape)
                     # h_i,w_i=image.shape[-2:]
                     # condition=int(h_i>w_i)
@@ -91,15 +103,18 @@ class CustomTrainDataset(Dataset):
 
                     patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
                     patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
-            
-                    patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
+                    patches_edge = (
+                        extract_patches_with_target_count(edge,self.patch_size,num_patch)[0]
+                        if needs_edge else edge
+                    )
 
                     filter_=patches_mask.sum((-1,-2))>=0
                     # print(filter.shape)
                     patches_image=patches_image.unsqueeze(1)[filter_]
                     # print(patches_image.shape)
                     patches_mask=patches_mask[filter_]
-                    patches_edge=patches_edge[filter_].unsqueeze(1)
+                    if needs_edge:
+                        patches_edge=patches_edge[filter_].unsqueeze(1)
                 # aug = K.AugmentationSequential(
                 #         K.RandomCrop((self.patch_size-self.patch_size//4, self.patch_size-self.patch_size//4), same_on_batch=True,p=0.5),
                 #         K.PadTo((self.patch_size, self.patch_size)),   # padding để khôi phục shape gốc
@@ -116,7 +131,8 @@ class CustomTrainDataset(Dataset):
                 
                 if len(patches_mask.shape)<4:
                     patches_mask=patches_mask.unsqueeze(1)
-                patches_edge=patches_edge[num_sample]
+                if needs_edge:
+                    patches_edge=patches_edge[num_sample]
                 # patches_image,patches_mask=aug(patches_image.cuda(),patches_mask.cuda())
                 return {
                     'image':patches_image,

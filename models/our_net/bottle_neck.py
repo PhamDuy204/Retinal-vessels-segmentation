@@ -51,15 +51,18 @@ class CAB(nn.Module):
 
 
         N = h * w
-        q_flat = q.permute(0, 2, 3, 1).contiguous().view(b, N, c) 
+        q_flat = q.permute(0, 2, 3, 1).contiguous().view(b, N, c)
         k_flat = k.permute(0, 2, 3, 1).contiguous().view(b, N, c)
         v_flat = v.permute(0, 2, 3, 1).contiguous().view(b, N, c)
 
-
-        scale = torch.sqrt(torch.tensor(c, dtype=q.dtype, device=q.device))
-        attn_logits = torch.matmul(q_flat, k_flat.transpose(-1, -2)) / scale
-        attn = torch.softmax(attn_logits, dim=-1)  
-        out_flat = torch.matmul(attn, v_flat) 
+        # Keep the original single-head scaled dot-product attention math while
+        # delegating kernel selection/fusion to PyTorch (FP32 stays FP32).
+        out_flat = F.scaled_dot_product_attention(
+            q_flat.unsqueeze(1),
+            k_flat.unsqueeze(1),
+            v_flat.unsqueeze(1),
+            dropout_p=0.0,
+        ).squeeze(1)
         out = out_flat.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()  
         out =  self.out_norm(self.pj(out)+x)
         ff_out = self.ff(out)+out

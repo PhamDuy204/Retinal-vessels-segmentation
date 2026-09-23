@@ -392,7 +392,7 @@ class swl(nn.Module):
             nn.Conv2d(12,64,1,bias=False),
             nn.ReLU(),
             nn.Conv2d(64,4,1,bias=False),
-            nn.Softmax()
+            nn.Softmax(dim=1)
         )
         self._init_weights()
 
@@ -414,4 +414,4 @@ class swl(nn.Module):
 
     def forward(self,x_0,x_1,x_2,x_3):
         cat_x=torch.cat((x_0,x_1,x_2,x_3),1)
-        return (cat_x*self.wl_1(nn.Softmax()(torch.cat((self.gmp(cat_x),self.gap(cat_x),self.wl(cat_x)),1)))).sum(1,keepdim=True)
+        return (cat_x*self.wl_1(nn.Softmax(dim=1)(torch.cat((self.gmp(cat_x),self.gap(cat_x),self.wl(cat_x)),1)))).sum(1,keepdim=True)
