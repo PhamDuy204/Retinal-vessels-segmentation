@@ -1,0 +1,50 @@
+{
+  "experiment_id": "baseline_modal6_pending_eval35_e60",
+  "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
+  "wandb_project": "Retinal-Vessels-Segmentation",
+  "models": [
+    "dysta_net",
+    "edae_net",
+    "fr_net",
+    "gtdla",
+    "unet"
+  ],
+  "datasets": [
+    "CHASEDB_1_patches",
+    "DRIVE_patches",
+    "STARE_F1_patches",
+    "STARE_F2_patches",
+    "STARE_F3_patches",
+    "STARE_F4_patches",
+    "STARE_F5_patches"
+  ],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    890
+  ],
+  "common_train_args": {
+    "batch_size": 4,
+    "epochs": 60,
+    "loss": "bce_loss",
+    "learning_rate": 0.001,
+    "patches": 500,
+    "patch_size": 64,
+    "train_type": "patch",
+    "type_split": "window",
+    "output_root": "outputs",
+    "wandb_mode": "online",
+    "num_workers": 2,
+    "pin_memory": true,
+    "persistent_workers": true,
+    "compile_model": false,
+    "eval_amp": false,
+    "tf32": true,
+    "fast_nondeterministic": true,
+    "eval_batch_size": 64,
+    "eval_every": 1,
+    "eval_start_epoch": 30
+  }
+}

@@ -1,37 +1,37 @@
 {
-  "experiment_id": "smoke-stare-chase-1epoch",
+  "experiment_id": "Retinal_training_revision_modal5_ournet_mamba3_width64_ema995_ttaflip_eval30_drive_seed2026_e60",
   "models": [
-    "our_net",
-    "edae_net"
+    "our_net_mamba3"
   ],
-  "seeds": [42, 123, 456, 789, 2024],
+  "seeds": [
+    2026
+  ],
   "datasets": [
-    "DRIVE_patches",
-    "STARE_F1_patches",
-    "STARE_F2_patches",
-    "STARE_F3_patches",
-    "STARE_F4_patches",
-    "STARE_F5_patches"
+    "DRIVE_patches"
   ],
   "common_train_args": {
     "batch_size": 4,
-    "epochs": 3,
+    "epochs": 60,
     "loss": "abe_dice_loss_optimized",
     "learning_rate": 0.001,
     "patches": 500,
     "patch_size": 64,
     "train_type": "patch",
     "type_split": "window",
-    "output_root": "outputs",
     "wandb_mode": "disabled",
     "num_workers": 2,
     "pin_memory": true,
     "persistent_workers": true,
+    "prefetch_factor": 2,
     "eval_batch_size": 64,
-    "eval_every": 1,
-    "compile_model": true,
-    "amp": false,
-    "tf32":true
+    "eval_every": 5,
+    "eval_start_epoch": 30,
+    "eval_tta_mode": "flips",
+    "ema_decay": 0.995,
+    "ema_update_every": 1,
+    "fast_nondeterministic": true,
+    "tf32": true,
+    "model_width": 64
   },
   "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
   "wandb_project": "Retinal-Vessels-Segmentation"

@@ -1,0 +1,41 @@
+{
+  "models": [
+    "our_net"
+  ],
+  "seeds": [
+    2026
+  ],
+  "datasets": [
+    "DRIVE_patches"
+  ],
+  "common_train_args": {
+    "batch_size": 4,
+    "loss": "abe_dice_loss_optimized",
+    "learning_rate": 0.001,
+    "patches": 64,
+    "patch_size": 64,
+    "train_type": "patch",
+    "type_split": "window",
+    "wandb_mode": "disabled",
+    "num_workers": 4,
+    "pin_memory": true,
+    "persistent_workers": true,
+    "prefetch_factor": 4,
+    "amp": true,
+    "amp_dtype": "bf16",
+    "micro_batch_size": 16,
+    "eval_batch_size": 128,
+    "eval_every": 1,
+    "eval_start_epoch": 1,
+    "eval_tta_mode": "none",
+    "ema_decay": 0.0,
+    "ema_update_every": 4,
+    "fast_nondeterministic": true,
+    "tf32": true,
+    "channels_last": true,
+    "epochs": 1
+  },
+  "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
+  "wandb_project": "Retinal-Vessels-Segmentation",
+  "experiment_id": "Retinal_training_smoke_modal4_ournet_speed_bf16_chlast_seed2026"
+}
