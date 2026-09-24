@@ -159,7 +159,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--micro-batch-size", type=int, default=48)
     parser.add_argument("--prefetch-factor", type=int, default=2)
     parser.add_argument("--channels-last", action="store_true")
-    parser.add_argument("--amp-dtype", choices=("fp32", "fp16", "bf16"), default="fp16")
+    parser.add_argument("--amp-dtype", choices=("fp32", "fp16", "bf16"), default="bf16")
     parser.add_argument(
         "--fast-nondeterministic",
         action=argparse.BooleanOptionalAction,
@@ -459,12 +459,15 @@ class Trainer:
                 torch.cuda.synchronize()
                 train_seconds = time.perf_counter() - epoch_start
                 if not bool(loss_is_finite):
-                    amp_hint = (
-                        " Disable --amp and rerun; this model is unstable "
-                        "under FP16 autocast."
-                        if self.args.amp
-                        else ""
-                    )
+                    if self.args.amp_dtype == "fp16":
+                        amp_hint = (
+                            " Retry with --amp-dtype bf16 (preferred on supported GPUs) "
+                            "or disable AMP for full FP32."
+                        )
+                    elif self.args.amp:
+                        amp_hint = " Disable AMP and rerun in full FP32."
+                    else:
+                        amp_hint = ""
                     raise FloatingPointError(
                         f"Non-finite loss on dataset={self.dataset_name}, epoch={epoch}."
                         f"{amp_hint}"

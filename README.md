@@ -49,7 +49,7 @@ The paper protocol uses 64×64 patches, stride 32, and 500 sampled training patc
 - learning rate: `0.0018`
 - patch training: 500 sampled 64×64 patches/image, window split
 - DataLoader: 4 workers, pinned memory, persistent workers
-- training AMP: **FP16 enabled**
+- training AMP: **BF16 enabled** (wider dynamic range than FP16)
 - native low-precision GroupNorm feature maps for `our_net`
 - evaluation AMP enabled, evaluation batch size 256
 - micro-batch size 48
@@ -81,7 +81,7 @@ python train.py \
   --pin-memory \
   --persistent-workers \
   --amp \
-  --amp-dtype fp16 \
+  --amp-dtype bf16 \
   --amp-native-norm \
   --eval-amp \
   --eval-batch-size 256 \
@@ -92,7 +92,7 @@ python train.py \
 
 Train on CHASE-DB1 by replacing the dataset with `CHASEDB_1_patches`.
 
-> **Mixed-precision safety note:** the default FP16 configuration is the fast configuration validated on DRIVE. Other datasets or numerical conditions can still produce `NaN`/non-finite loss under mixed precision. If this happens, keep the other optimized runtime settings but disable FP16 and run the model/evaluation in FP32 using the command below.
+> **Mixed-precision safety note:** BF16 is the default because the previous FP16 run on DRIVE produced a non-finite loss late in training, while BF16 keeps the same Tensor Core mixed-precision path with a much wider exponent range. If a dataset/model still produces `NaN`/non-finite loss, keep the other optimized runtime settings and fall back to full FP32 using the command below. FP16 remains available explicitly with `--amp-dtype fp16` for experiments where it is known to be stable.
 
 ```bash
 python train.py \

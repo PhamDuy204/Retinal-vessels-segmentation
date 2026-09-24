@@ -12,7 +12,7 @@ def test_optimized_our_net_defaults():
     assert args.pin_memory is True
     assert args.persistent_workers is True
     assert args.amp is True
-    assert args.amp_dtype == "fp16"
+    assert args.amp_dtype == "bf16"
     assert args.amp_native_norm is True
     assert args.eval_amp is True
     assert args.eval_batch_size == 256
