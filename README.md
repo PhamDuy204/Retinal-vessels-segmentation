@@ -117,6 +117,54 @@ For the full controlled experiment matrix:
 python run_statistics.py --config configs/statistics.json
 ```
 
+### Weights & Biases (optional)
+
+On the first machine/session that will upload runs to W&B, log in once and paste
+your personal API token when prompted:
+
+```bash
+wandb login
+```
+
+Do **not** commit the token to this repository. You can also provide it through
+the `WANDB_API_KEY` environment variable in CI/cloud environments.
+
+To change the W&B project name for a direct training run:
+
+```bash
+python train.py \
+  --datasets DRIVE_patches \
+  --wandb-project My-Retinal-Project
+```
+
+For `run_statistics.py`, set the project in the JSON config:
+
+```json
+{
+  "wandb_project": "My-Retinal-Project",
+  "wandb_entity": "your-wandb-entity"
+}
+```
+
+To run without W&B at all:
+
+```bash
+python train.py \
+  --datasets DRIVE_patches \
+  --wandb-mode disabled
+```
+
+or set the statistics config to:
+
+```json
+{
+  "wandb_mode": "disabled"
+}
+```
+
+You may also temporarily disable W&B for a shell/session with
+`WANDB_MODE=disabled`.
+
 ---
 
 ## Loss
