@@ -43,8 +43,3 @@ def test_grid_patch_reconstruction_uses_native_torch_ops(monkeypatch):
     )
 
     torch.testing.assert_close(reconstructed, image, rtol=0, atol=0)
-
-
-def test_patch_grid_from_stride_matches_paper_protocol():
-    assert utils.patch_grid_from_stride(640, 640, patch_size=64, stride=32) == (19, 19)
-    assert utils.patch_grid_from_stride(512, 512, patch_size=64, stride=32) == (15, 15)

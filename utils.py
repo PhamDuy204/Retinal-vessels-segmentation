@@ -181,21 +181,6 @@ def mirror_padding_v2(image):
 def count_trainable_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def patch_grid_from_stride(height, width, patch_size=64, stride=32):
-    if isinstance(patch_size, int):
-        ph, pw = patch_size, patch_size
-    else:
-        ph, pw = patch_size
-    if isinstance(stride, int):
-        sh, sw = stride, stride
-    else:
-        sh, sw = stride
-    return (
-        (height - ph) // sh + 1,
-        (width - pw) // sw + 1,
-    )
-
-
 def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
     while len(img.shape)<4:
         img=img.unsqueeze(0)

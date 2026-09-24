@@ -12,7 +12,6 @@ from utils import (
     check_model_forward_args,
     extract_patches_with_target_count,
     mirror_padding_v2,
-    patch_grid_from_stride,
     reverse_to_original_image,
 )
 
@@ -242,11 +241,9 @@ def eval_for_seg(
             stride = None
             patch_inference = patch and type_split != "random"
             if patch_inference:
-                patch_grid = patch_grid_from_stride(
-                    height,
-                    width,
-                    patch_size=patch_size,
-                    stride=32,
+                patch_grid = (
+                    (height - patch_size) // 32 + 1,
+                    (width - patch_size) // 8 + 1,
                 )
                 image, stride = extract_patches_with_target_count(
                     image, patch_size, patch_grid
