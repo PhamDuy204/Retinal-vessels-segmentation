@@ -181,6 +181,21 @@ def mirror_padding_v2(image):
 def count_trainable_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+def patch_grid_from_stride(height, width, patch_size=64, stride=32):
+    if isinstance(patch_size, int):
+        ph, pw = patch_size, patch_size
+    else:
+        ph, pw = patch_size
+    if isinstance(stride, int):
+        sh, sw = stride, stride
+    else:
+        sh, sw = stride
+    return (
+        (height - ph) // sh + 1,
+        (width - pw) // sw + 1,
+    )
+
+
 def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
     while len(img.shape)<4:
         img=img.unsqueeze(0)
@@ -194,11 +209,38 @@ def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
     sh = (H - ph) // (target_patches_per_dim[0] - 1) if target_patches_per_dim[0] > 1 else H
     sw = (W - pw) // (target_patches_per_dim[1] - 1) if target_patches_per_dim[1] > 1 else W
 
-    patches = kornia.contrib.extract_tensor_patches(img, (ph, pw), stride=(sh, sw),allow_auto_padding=False).flatten(0,1)
+    patches = kornia.contrib.extract_tensor_patches(
+        img,
+        (ph, pw),
+        stride=(sh, sw),
+        allow_auto_padding=False,
+    ).flatten(0, 1)
     return patches, (sh, sw)
-def reverse_to_original_image(patches, original_size,patch_size,stride):
-    original_image = kornia.contrib.combine_tensor_patches(patches, original_size=original_size,window_size=patch_size,stride=stride,allow_auto_unpadding=False)
-    return original_image
+
+
+def reverse_to_original_image(patches, original_size, patch_size, stride):
+    if isinstance(patch_size, int):
+        ph, pw = patch_size, patch_size
+    else:
+        ph, pw = patch_size
+
+    batch_size, patch_count, channels = patches.shape[:3]
+    columns = patches.reshape(
+        batch_size, patch_count, channels * ph * pw
+    ).transpose(1, 2)
+    summed = F.fold(
+        columns,
+        output_size=original_size,
+        kernel_size=(ph, pw),
+        stride=stride,
+    )
+    overlap = F.fold(
+        patches.new_ones((batch_size, ph * pw, patch_count)),
+        output_size=original_size,
+        kernel_size=(ph, pw),
+        stride=stride,
+    )
+    return summed / overlap.clamp_min_(1)
 
 
 def create_error_map(pred_mask, gt_mask):
