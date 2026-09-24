@@ -216,7 +216,7 @@ python3 summarize_statistics.py \
 
 ## Optimized `our_net` training
 
-`--model our_net` is kept as a historical loader alias and maps to `models/main_net/main_net.py`, so the original JSON configs remain unchanged. The existing startup parameter-count check is also preserved. The original `loss/abe_dice_loss.py` is unchanged. Select the exact-safe copy explicitly:
+`--model our_net` loads the cleaned SGMA-Net implementation in `models/our_net/our_net.py`. The preserved pre-cleanup implementation is available separately as `--model main_net` from `models/main_net/main_net.py`. The existing startup parameter-count check for `our_net` is preserved. The original `loss/abe_dice_loss.py` is unchanged. Select the exact-safe copy explicitly:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python3 train.py \
