@@ -256,8 +256,16 @@ class BottleNeck_2(nn.Module):
         b, c, h, w = x.shape
 
 
-        seq = x.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
-        forward_states = self.mamba(seq) + seq    
+        seq = x.permute(0, 2, 3, 1).contiguous().view(b, h * w, c)
+        # Mamba2's fused FP16 path can emit non-finite values even when its
+        # input and projection are finite. Keep BF16/FP32 untouched, but run
+        # only the proven-unstable FP16 Mamba2 region in FP32.
+        if seq.dtype == torch.float16:
+            with torch.amp.autocast(seq.device.type, enabled=False):
+                mamba_states = self.mamba(seq.float()).to(seq.dtype)
+        else:
+            mamba_states = self.mamba(seq)
+        forward_states = mamba_states + seq
         merged = self.out(forward_states)+forward_states
         out = merged.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()
         return out
