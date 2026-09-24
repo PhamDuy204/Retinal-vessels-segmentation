@@ -116,12 +116,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--amp",
         action="store_true",
-        help="Enable experimental CUDA FP16 autocast for training",
+        default=False,
+        help="Opt in to CUDA mixed precision for training; default is full FP32",
     )
     parser.add_argument(
         "--eval-amp",
         action="store_true",
-        help="Enable CUDA FP16 autocast only during evaluation",
+        default=False,
+        help="Opt in to CUDA autocast during evaluation; default is full FP32",
     )
     parser.add_argument("--eval-batch-size", type=int, default=0)
     parser.add_argument("--eval-auroc-device", choices=("cuda", "cpu"), default="cuda")
@@ -134,13 +136,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--micro-batch-size", type=int, default=0)
     parser.add_argument("--prefetch-factor", type=int, default=2)
     parser.add_argument("--channels-last", action="store_true")
-    parser.add_argument("--amp-dtype", choices=("fp16", "bf16"), default="fp16")
+    parser.add_argument("--amp-dtype", choices=("fp32", "fp16", "bf16"), default="fp32")
     parser.add_argument(
         "--fast-nondeterministic",
         action="store_true",
         help="Enable cuDNN autotuning and nondeterministic CUDA algorithms",
     )
-    parser.add_argument("--tf32", action="store_true")
+    parser.add_argument("--tf32", action="store_true", default=False)
     parser.add_argument("--compile-model", action="store_true")
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--profile-steps", type=int, default=10)
@@ -273,7 +275,12 @@ class Trainer:
         self.model.cuda()
         if self.args.channels_last:
             self.model.to(memory_format=torch.channels_last)
-        amp_dtype = torch.bfloat16 if self.args.amp_dtype == "bf16" else torch.float16
+        amp_dtype = {
+            "fp16": torch.float16,
+            "bf16": torch.bfloat16,
+            "fp32": torch.float32,
+        }[self.args.amp_dtype]
+        train_amp_enabled = self.args.amp and self.args.amp_dtype in {"fp16", "bf16"}
         ema_model = None
         if self.args.ema_decay > 0:
             ema_model = copy.deepcopy(getattr(self.model, "_orig_mod", self.model)).cuda().eval()
@@ -284,7 +291,7 @@ class Trainer:
         if self.args.wandb_watch:
             wandb.watch(self.model, self.criterion, log="all", log_freq=100)
 
-        scaler = torch.amp.GradScaler("cuda", enabled=self.args.amp and self.args.amp_dtype == "fp16")
+        scaler = torch.amp.GradScaler("cuda", enabled=train_amp_enabled and self.args.amp_dtype == "fp16")
         profiler = TrainingProfiler(
             enabled=self.args.profile,
             steps=self.args.profile_steps,
@@ -361,13 +368,13 @@ class Trainer:
                         image_chunks, mask_chunks, edge_chunks
                     ):
                         with profiler.region("model_forward"):
-                            with torch.amp.autocast("cuda", enabled=self.args.amp, dtype=amp_dtype):
+                            with torch.amp.autocast("cuda", enabled=train_amp_enabled, dtype=amp_dtype):
                                 if self.model_forward_args == 2:
                                     predicted_mask = self.model(next_image, next_edge)
                                 else:
                                     predicted_mask = self.model(next_image)
                         with profiler.region("loss_forward"):
-                            with torch.amp.autocast("cuda", enabled=self.args.amp, dtype=amp_dtype):
+                            with torch.amp.autocast("cuda", enabled=train_amp_enabled, dtype=amp_dtype):
                                 loss = self.criterion(predicted_mask, next_mask)
                         loss_value = float(loss.detach())
                         if not math.isfinite(loss_value):

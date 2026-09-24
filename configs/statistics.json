@@ -11,7 +11,13 @@
     "custom_net",
     "our_net"
   ],
-  "seeds": [42, 123, 456, 789, 2024],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    2024
+  ],
   "datasets": [
     "CHASEDB_1_patches",
     "DRIVE_patches",
@@ -31,7 +37,11 @@
     "train_type": "patch",
     "type_split": "window",
     "output_root": "outputs",
-    "wandb_mode": "online"
+    "wandb_mode": "online",
+    "amp": false,
+    "eval_amp": false,
+    "tf32": false,
+    "amp_dtype": "fp32"
   },
   "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
   "wandb_project": "Retinal-Vessels-Segmentation"
