@@ -330,8 +330,21 @@ class MAB(nn.Module):
         b2_1= self.branch_2_1(x_f)
         b2_2= self.branch_2_2(x_f)
 
-        m=self.merge(torch.cat((b0_0,b0_1,b0_2,b1_0,b1_1,b1_2,b2_0,b2_1,b2_2),1))*x
+        merged=self.merge(torch.cat((b0_0,b0_1,b0_2,b1_0,b1_1,b1_2,b2_0,b2_1,b2_2),1))
 
+        # The multiplicative MAB path can exceed FP16's finite range even when
+        # both operands are finite. Keep BF16/FP32 unchanged, but compute the
+        # proven-sensitive product/statistics/gating region in FP32 for FP16.
+        if x.dtype == torch.float16:
+            with torch.amp.autocast(x.device.type, enabled=False):
+                m = merged.float() * x.float()
+                avg_m = m.mean(1, keepdim=True)
+                max_m = m.max(1, keepdim=True).values
+                std_m = m.std(1, keepdim=True)
+                w = self.transform_statistic(torch.cat((avg_m, max_m, std_m), 1))
+                return (w * m).to(x.dtype)
+
+        m=merged*x
         avg_m=m.mean(1,keepdim=True)
         max_m=m.max(1,keepdim=True).values
         std_m=m.std(1,keepdim=True)
