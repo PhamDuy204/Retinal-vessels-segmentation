@@ -37,7 +37,7 @@ def test_bottleneck2_runs_only_fp16_mamba_region_in_fp32():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA AMP required")
-def test_bottleneck2_keeps_bf16_mamba_path_native():
+def test_bottleneck2_runs_bf16_mamba_region_in_fp32():
     block = BottleNeck_2(32).cuda().eval()
     recorder = _DtypeRecorder().cuda()
     block.mamba = recorder
@@ -46,6 +46,6 @@ def test_bottleneck2_keeps_bf16_mamba_path_native():
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
         output = block(x)
 
-    assert recorder.seen_dtype == torch.bfloat16
+    assert recorder.seen_dtype == torch.float32
     assert output.dtype == torch.bfloat16
     assert torch.isfinite(output).all()
