@@ -1,21 +1,20 @@
 {
-  "experiment_id": "smoke-stare-chase-1epoch",
+  "experiment_id": "wandb-unet-ournet-2seed-2epoch",
   "models": [
-    "our_net",
-    "edae_net"
+    "unet",
+    "our_net"
   ],
-  "seeds": [42, 123, 456, 789, 2024],
+  "seeds": [
+    42,
+    123
+  ],
   "datasets": [
     "DRIVE_patches",
-    "STARE_F1_patches",
-    "STARE_F2_patches",
-    "STARE_F3_patches",
-    "STARE_F4_patches",
-    "STARE_F5_patches"
+    "STARE_F1_patches"
   ],
   "common_train_args": {
     "batch_size": 4,
-    "epochs": 3,
+    "epochs": 2,
     "loss": "abe_dice_loss_optimized",
     "learning_rate": 0.001,
     "patches": 500,
@@ -23,15 +22,14 @@
     "train_type": "patch",
     "type_split": "window",
     "output_root": "outputs",
-    "wandb_mode": "disabled",
+    "wandb_mode": "online",
     "num_workers": 2,
     "pin_memory": true,
     "persistent_workers": true,
+    "tf32": true,
     "eval_batch_size": 64,
-    "eval_every": 1,
-    "compile_model": true,
-    "amp": false,
-    "tf32":true
+    "eval_amp": true,
+    "fast_nondeterministic": true
   },
   "wandb_entity": "phamdinhanhduy-university-of-information-and-technology",
   "wandb_project": "Retinal-Vessels-Segmentation"

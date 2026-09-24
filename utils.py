@@ -53,9 +53,8 @@ def apply_gamma_correction(orimage, gamma=1.2):
 def _preprocessing_img_impl(path):
     """Paper preprocessing shared by every model.
 
-    RGB -> grayscale -> per-image z-score -> CLAHE -> unsharp masking.
-    The z-scored image is linearly mapped to uint8 only because OpenCV CLAHE
-    operates on 8-bit single-channel images.
+    RGB -> weighted grayscale -> per-image z-score -> CLAHE -> unsharp masking.
+    The z-scored image is mapped to uint8 before OpenCV CLAHE.
     """
     if isinstance(path, str):
         img = np.array(Image.open(path).convert("RGB"))
@@ -84,13 +83,15 @@ def _preprocessing_img_impl(path):
 
 @lru_cache(maxsize=None)
 def _cached_preprocessing_img(path):
+    """Cache the single deterministic preprocessing path shared by all models."""
     return _preprocessing_img_impl(path)
 
 
-def preprocessing_img(path, model_name=None):
-    """Return identical preprocessing for all models.
+def preprocessing_img(path, model_name="our_net"):
+    """Apply identical preprocessing for every model.
 
-    model_name is accepted only for backward-compatible dataset calls.
+    model_name is accepted only for backward compatibility with the original
+    dataset/training API; it does not alter preprocessing.
     """
     if isinstance(path, str):
         return _cached_preprocessing_img(path).copy()
@@ -179,35 +180,6 @@ def mirror_padding_v2(image):
 
 def count_trainable_params(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-def pad_to_patch_grid(img, patch_size=64, stride=32):
-    """Reflection-pad bottom/right so a sliding grid covers the full image."""
-    while img.ndim < 4:
-        img = img.unsqueeze(0)
-    h, w = img.shape[-2:]
-    target_h = max(h, patch_size)
-    target_w = max(w, patch_size)
-    target_h += (stride - (target_h - patch_size) % stride) % stride
-    target_w += (stride - (target_w - patch_size) % stride) % stride
-    pad_h = target_h - h
-    pad_w = target_w - w
-    if pad_h or pad_w:
-        img = F.pad(img, (0, pad_w, 0, pad_h), mode="reflect")
-    return img
-
-
-def extract_patches_with_stride(img, patch_size=64, stride=32):
-    """Extract the fixed overlapping sliding-window grid used in the paper."""
-    while img.ndim < 4:
-        img = img.unsqueeze(0)
-    patches = kornia.contrib.extract_tensor_patches(
-        img,
-        (patch_size, patch_size),
-        stride=(stride, stride),
-        allow_auto_padding=False,
-    )
-    return patches, (stride, stride)
-
 
 def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
     while len(img.shape)<4:

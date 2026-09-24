@@ -71,30 +71,45 @@ class CustomTrainDataset(Dataset):
                     patches_mask,_ = split_patch(mask,self.num_patches,self.patch_size,boxes)
                     patches_edge,_ = split_patch(edge,self.num_patches,self.patch_size,boxes)
                 else:
-                    if len(mask.shape) < 3:
-                        mask = mask.unsqueeze(0)
-                    patches_image, _ = extract_patches_with_stride(
-                        image, self.patch_size, stride=self.patch_size // 2
-                    )
-                    patches_mask, _ = extract_patches_with_stride(
-                        mask, self.patch_size, stride=self.patch_size // 2
-                    )
-                    patches_edge, _ = extract_patches_with_stride(
-                        edge, self.patch_size, stride=self.patch_size // 2
-                    )
-                    patches_image = patches_image.flatten(0, 1)
-                    patches_mask = patches_mask.flatten(0, 1)
-                    patches_edge = patches_edge.flatten(0, 1)
+                    # print(image.shape)
+                    image=mirror_padding_v2(image)
+                    h,w=image.shape[-2:]
+                    # print(image.shape)
+                    # print(mask.shape)
+                    if len(mask.shape)<3:mask=mask.unsqueeze(0)
+                    mask=mirror_padding_v2(mask)
+                    # print(mask.shape)
+                    edge=mirror_padding_v2(edge)
+                    # print(edge.shape)
+                    # h_i,w_i=image.shape[-2:]
+                    # condition=int(h_i>w_i)
+                    items = [8, 16, 32]
+                    # idx = torch.randint(0, 3, (1,)).item()
+                    choice_h = items[torch.randint(0, 3, (1,)).item()]
+                    choice_w = items[torch.randint(0, 3, (1,)).item()]
+                    num_patch=((h-self.patch_size)//choice_h+1,(w-self.patch_size)//choice_w+1)
+
+                    patches_image,_ = extract_patches_with_target_count(image,self.patch_size,num_patch)
+                    patches_mask,_ = extract_patches_with_target_count(mask,self.patch_size,num_patch)
+            
+                    patches_edge,_ = extract_patches_with_target_count(edge,self.patch_size,num_patch)
+
+                    filter_=patches_mask.sum((-1,-2))>=0
+                    # print(filter.shape)
+                    patches_image=patches_image.unsqueeze(1)[filter_]
+                    # print(patches_image.shape)
+                    patches_mask=patches_mask[filter_]
+                    patches_edge=patches_edge[filter_].unsqueeze(1)
                 # aug = K.AugmentationSequential(
                 #         K.RandomCrop((self.patch_size-self.patch_size//4, self.patch_size-self.patch_size//4), same_on_batch=True,p=0.5),
                 #         K.PadTo((self.patch_size, self.patch_size)),   # padding để khôi phục shape gốc
                 #         data_keys=["input", "mask"]
                 #     ).cuda()
                 n = len(patches_image)
-                if n >= self.num_patches:
-                    num_sample = torch.randperm(n)[:self.num_patches]
+                if n >= 750:
+                    num_sample = torch.randperm(n)[:750]
                 else:
-                    extra = torch.randint(0, n, (self.num_patches - n,))
+                    extra = torch.randint(0, n, (750 - n,))
                     num_sample = torch.cat([torch.arange(n), extra])
                 patches_image=patches_image[num_sample]
                 patches_mask=patches_mask.long()[num_sample]

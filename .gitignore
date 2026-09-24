@@ -21,4 +21,3 @@ venv/
 wandb/
 checkpoints/
 notebooks/*
-outputs/

@@ -3,6 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import torch.nn as nn
 import torch.nn.functional as F
+from bottle_neck import *
 from modules import *
 
 class SegModel(nn.Module):
@@ -13,8 +14,7 @@ class SegModel(nn.Module):
         self.down_0=down_sampling(in_channels,32,(64,64)) #B,64,32,32
         self.down_1=down_sampling(32,32,(32,32)) #B,128,16,16
         self.down_2=down_sampling(32,32,(16,16))#B,256,8,8
-        self.bneck=nn.Sequential(nn.Sequential(nn.Conv2d(32,32,3,bias=False,padding='same'),nn.GroupNorm(8,32,affine=False),nn.ReLU()),
-        nn.Sequential(nn.Conv2d(32,32,3,bias=False,padding='same'),nn.GroupNorm(8,32,affine=False),nn.ReLU()))
+        self.bneck=nn.Sequential(CAB_1(32),BottleNeck_2(32),CAB(32))
         self.up_0=up_sampling(32,32,32,(16,16)) #B,64,32,32
         self.up_1=up_sampling(32,32,32,(32,32)) #B,128,16,16
         

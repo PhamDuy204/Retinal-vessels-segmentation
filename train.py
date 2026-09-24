@@ -39,7 +39,7 @@ from utils import check_model_forward_args, count_trainable_params
 
 
 EVALUATION_THRESHOLD = 0.487
-SAMPLED_PATCHES_PER_IMAGE = 500
+SAMPLED_PATCHES_PER_IMAGE = 750
 EPOCH_FIELDS = (
     "epoch",
     "loss",
@@ -76,7 +76,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train retinal vessel segmentation models")
     parser.add_argument("-b", "--batch_size", type=int, default=4)
     parser.add_argument("-e", "--epochs", type=int, default=100)
-    parser.add_argument("-lf", "--loss", type=str, default="our_loss")
+    parser.add_argument("-lf", "--loss", type=str, default="abe_dice_loss")
     parser.add_argument("-m", "--model", type=str, default="unet")
     parser.add_argument("--model-width", type=int, default=0, help="Optional width/channels override for models that accept a width argument")
     parser.add_argument("-lr", "--learning_rate", type=float, default=0.001)
@@ -778,13 +778,12 @@ def gpu_worker(
                         torch.set_float32_matmul_precision("high")
                     if args.compile_model:
                         model = torch.compile(model)
+                    # Keep the existing Adam optimizer without weight decay.
                     optimizer = torch.optim.Adam(
-                        model.parameters(),
-                        lr=args.learning_rate,
-                        weight_decay=5e-4,
+                        model.parameters(), lr=args.learning_rate
                     )
                     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                        optimizer, T_max=100, eta_min=3e-6
+                        optimizer, T_max=args.epochs, eta_min=3e-6
                     )
                     trainer = Trainer(
                         model=model,
