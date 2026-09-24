@@ -270,7 +270,7 @@ def eval_for_seg(
                 forward_args,
                 amp,
                 profile,
-                patch_inference,
+                False,
                 active_tta_mode,
             )
 

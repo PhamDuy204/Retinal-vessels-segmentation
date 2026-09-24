@@ -38,6 +38,16 @@ FLAG_NAMES = {
     "log_artifacts": "--log-artifacts",
 }
 
+BOOLEAN_OPTIONAL_FLAGS = {
+    "amp",
+    "eval_amp",
+    "amp_native_norm",
+    "fast_nondeterministic",
+    "fused_adam",
+    "pin_memory",
+    "persistent_workers",
+}
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -62,9 +72,13 @@ def validate_subset(chosen: Iterable[Any] | None, configured: Iterable[Any], lab
 def common_args_to_cli(common_args: Mapping[str, Any]) -> list[str]:
     command: list[str] = []
     for key, value in common_args.items():
-        if value is None or value is False:
+        if value is None:
             continue
         flag = FLAG_NAMES.get(key, f"--{key.replace('_', '-')}")
+        if value is False:
+            if key in BOOLEAN_OPTIONAL_FLAGS:
+                command.append(f"--no-{key.replace('_', '-')}")
+            continue
         command.append(flag)
         if value is not True:
             command.append(str(value))

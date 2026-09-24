@@ -204,6 +204,9 @@ def extract_patches_with_target_count(img, patch_size, target_patches_per_dim):
 
 
 def reverse_to_original_image(patches, original_size, patch_size, stride):
+    # Keep overlapping-patch accumulation accurate with AMP inference.
+    if patches.dtype in (torch.float16, torch.bfloat16):
+        patches = patches.float()
     if isinstance(patch_size, int):
         ph, pw = patch_size, patch_size
     else:

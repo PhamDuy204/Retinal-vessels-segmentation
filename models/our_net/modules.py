@@ -77,6 +77,21 @@ def init_module_weights(module: nn.Module):
 # -------------------------
 # Các lớp (giữ cấu trúc của bạn)
 # -------------------------
+class FeatureGroupNorm(nn.GroupNorm):
+    """Opt-in native low-precision features; master parameters remain FP32."""
+    native_amp = False
+
+    def forward(self, x):
+        if not self.native_amp or x.dtype not in (torch.float16, torch.bfloat16):
+            return super().forward(x)
+        # PyTorch's CUDA kernel accumulates statistics in float, while retaining
+        # the input/output dtype. Cast affine views without changing parameters.
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            weight = self.weight.to(x.dtype) if self.weight is not None else None
+            bias = self.bias.to(x.dtype) if self.bias is not None else None
+            return F.group_norm(x, self.num_groups, weight, bias, self.eps)
+
+
 class ConvFunc(nn.Module):
     def __init__(self, in_channels, kernel_size=3, stride=1, padding: Optional[int]='same', dilation=1,bias=False,with_activate=True):
         super().__init__()
@@ -84,11 +99,11 @@ class ConvFunc(nn.Module):
         self._in_ch = in_channels
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size, stride, padding, dilation, bias=bias),
-            nn.GroupNorm(1,in_channels),
+            FeatureGroupNorm(1,in_channels),
             nn.ReLU(),
             nn.Conv2d(in_channels, in_channels, kernel_size,padding='same', bias=bias),
             nn.ReLU())
-        self.gn=nn.GroupNorm(safe_group(in_channels,16),in_channels)
+        self.gn=FeatureGroupNorm(safe_group(in_channels,16),in_channels)
         self.act = nn.ReLU()
         self.merge=nn.Conv2d(2*in_channels, in_channels, 1,bias=False)
         self.with_activate=with_activate
@@ -117,7 +132,7 @@ class MKIR(nn.Module):
         self.out =nn.Sequential(
             nn.Conv2d(3*out_channels, out_channels, 1, bias=False),
             nn.ReLU())
-        self.norm = nn.GroupNorm(1,out_channels)
+        self.norm = FeatureGroupNorm(1,out_channels)
         self.act=nn.ReLU()
 
         init_module_weights(self)
@@ -202,7 +217,7 @@ class AG(nn.Module):
         )
         self.final_merge = nn.Sequential(
             nn.Conv2d(2 * in_channels, in_channels, 3, padding='same', bias=False),
-            nn.GroupNorm(8, in_channels, affine=False), # giữ nguyên như bạn đặt
+            FeatureGroupNorm(8, in_channels, affine=False), # giữ nguyên như bạn đặt
             nn.ReLU(),
         )
         
@@ -255,12 +270,12 @@ class DWConv(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size, stride, padding, dilation,groups = in_channels, bias=bias),
             nn.Conv2d(in_channels,in_channels,1,bias=False),
-            nn.GroupNorm(1,in_channels),
+            FeatureGroupNorm(1,in_channels),
             nn.ReLU(),
             nn.Conv2d(in_channels, in_channels, kernel_size, stride, padding,groups = in_channels, bias=bias),
             nn.Conv2d(in_channels,in_channels,1,bias=False),
             )
-        self.gn=nn.GroupNorm(safe_group(in_channels,16),in_channels)
+        self.gn=FeatureGroupNorm(safe_group(in_channels,16),in_channels)
         self.act = nn.ReLU()
         self.merge=nn.Conv2d(2*in_channels, in_channels, 1,bias=False)
         self.with_activate=with_activate
@@ -358,7 +373,7 @@ class up_sampling(nn.Module):
         self.mab=MAB(out_channels,in_size)
         self.cat=nn.Sequential(
             nn.Conv2d(3*out_channels,out_channels,3,padding='same',bias=False),
-            nn.GroupNorm(out_channels,out_channels),
+            FeatureGroupNorm(out_channels,out_channels),
             nn.ReLU(),
             CA(out_channels),
             SA()

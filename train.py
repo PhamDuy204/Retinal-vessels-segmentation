@@ -10,6 +10,7 @@ import os
 import queue
 import sys
 import traceback
+import time
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
@@ -53,6 +54,9 @@ EPOCH_FIELDS = (
     "cdice",
     "threshold",
     "lr",
+    "train_seconds",
+    "eval_seconds",
+    "epoch_seconds",
 )
 
 
@@ -76,10 +80,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train retinal vessel segmentation models")
     parser.add_argument("-b", "--batch_size", type=int, default=4)
     parser.add_argument("-e", "--epochs", type=int, default=100)
-    parser.add_argument("-lf", "--loss", type=str, default="abe_dice_loss")
-    parser.add_argument("-m", "--model", type=str, default="unet")
+    parser.add_argument("-lf", "--loss", type=str, default="main_loss")
+    parser.add_argument("-m", "--model", type=str, default="our_net")
     parser.add_argument("--model-width", type=int, default=0, help="Optional width/channels override for models that accept a width argument")
-    parser.add_argument("-lr", "--learning_rate", type=float, default=0.001)
+    parser.add_argument("-lr", "--learning_rate", type=float, default=0.0018)
     parser.add_argument("-p", "--patches", type=int, default=500)
     parser.add_argument("-ps", "--patch_size", type=int, default=64)
     parser.add_argument("-tt", "--train_type", type=str, default="patch")
@@ -110,22 +114,41 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--log-artifacts", action="store_true")
     parser.add_argument("--wandb-watch", action="store_true")
-    parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--pin-memory", action="store_true")
-    parser.add_argument("--persistent-workers", action="store_true")
+    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--pin-memory",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use pinned CPU memory for faster CUDA transfers",
+    )
+    parser.add_argument(
+        "--persistent-workers",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Keep DataLoader workers alive between epochs",
+    )
     parser.add_argument(
         "--amp",
-        action="store_true",
-        default=False,
-        help="Opt in to CUDA mixed precision for training; default is full FP32",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable CUDA mixed precision for training by default",
     )
     parser.add_argument(
         "--eval-amp",
-        action="store_true",
-        default=False,
-        help="Opt in to CUDA autocast during evaluation; default is full FP32",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable CUDA autocast during evaluation by default",
     )
-    parser.add_argument("--eval-batch-size", type=int, default=0)
+    parser.add_argument(
+        "--amp-native-norm",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Keep our_net GroupNorm feature maps in the incoming AMP dtype; "
+            "defaults on for our_net mixed-precision training"
+        ),
+    )
+    parser.add_argument("--eval-batch-size", type=int, default=256)
     parser.add_argument("--eval-auroc-device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--eval-every", type=int, default=1)
     parser.add_argument("--eval-start-epoch", type=int, default=1)
@@ -133,13 +156,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--eval-tta-mode", choices=("none", "flips", "d4"), default="none")
     parser.add_argument("--ema-decay", type=float, default=0.0)
     parser.add_argument("--ema-update-every", type=int, default=1)
-    parser.add_argument("--micro-batch-size", type=int, default=0)
+    parser.add_argument("--micro-batch-size", type=int, default=48)
     parser.add_argument("--prefetch-factor", type=int, default=2)
     parser.add_argument("--channels-last", action="store_true")
-    parser.add_argument("--amp-dtype", choices=("fp32", "fp16", "bf16"), default="fp32")
+    parser.add_argument("--amp-dtype", choices=("fp32", "fp16", "bf16"), default="fp16")
     parser.add_argument(
         "--fast-nondeterministic",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Enable cuDNN autotuning and nondeterministic CUDA algorithms",
     )
     parser.add_argument("--tf32", action="store_true", default=False)
@@ -155,13 +179,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--fused-adam",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Use PyTorch fused CUDA Adam implementation when available",
     )
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--profile-steps", type=int, default=10)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
+    if args.amp_native_norm is None:
+        args.amp_native_norm = (
+            args.model == "our_net"
+            and args.amp
+            and args.amp_dtype in {"fp16", "bf16"}
+        )
+    if args.amp_native_norm and args.model != "our_net":
+        parser.error("--amp-native-norm is supported for our_net only")
     if args.epochs < 1:
         parser.error("--epochs must be at least 1")
     if args.model_width < 0:
@@ -325,8 +358,10 @@ class Trainer:
             writer.writeheader()
 
             for epoch in range(1, self.args.epochs + 1):
+                torch.cuda.synchronize()
+                epoch_start = time.perf_counter()
                 self.model.train()
-                training_loss = 0.0
+                training_loss_values: list[torch.Tensor] = []
                 train_iterator = iter(self.train_loader)
                 for _ in tqdm(range(len(self.train_loader))):
                     with profiler.region("data_loading"):
@@ -392,28 +427,9 @@ class Trainer:
                         with profiler.region("loss_forward"):
                             with torch.amp.autocast("cuda", enabled=train_amp_enabled, dtype=amp_dtype):
                                 loss = self.criterion(predicted_mask, next_mask)
-                        loss_value = float(loss.detach())
-                        if not math.isfinite(loss_value):
-                            outputs = (
-                                predicted_mask
-                                if isinstance(predicted_mask, (tuple, list))
-                                else (predicted_mask,)
-                            )
-                            finite_ratios = [
-                                float(torch.isfinite(output).float().mean())
-                                for output in outputs
-                            ]
-                            amp_hint = (
-                                " Disable --amp and rerun; this model is unstable "
-                                "under FP16 autocast."
-                                if self.args.amp
-                                else ""
-                            )
-                            raise FloatingPointError(
-                                f"Non-finite loss on dataset={self.dataset_name}, "
-                                f"epoch={epoch}, output_finite_ratios={finite_ratios}."
-                                f"{amp_hint}"
-                            )
+                        # Keep loss accounting on GPU. Converting each CUDA loss to a
+                        # Python float serializes the CPU with the GPU once per micro-batch.
+                        training_loss_values.append(loss.detach().float())
                         self.optimizer.zero_grad(set_to_none=True)
                         with profiler.region("backward"):
                             scaler.scale(loss).backward()
@@ -435,8 +451,25 @@ class Trainer:
                                     ema_model.buffers(), source_model.buffers()
                                 ):
                                     ema_buffer.copy_(source_buffer)
-                        training_loss += loss_value
                         profiler.step()
+
+                losses = torch.stack(training_loss_values)
+                loss_is_finite = torch.isfinite(losses).all()
+                training_loss_tensor = losses.sum()
+                torch.cuda.synchronize()
+                train_seconds = time.perf_counter() - epoch_start
+                if not bool(loss_is_finite):
+                    amp_hint = (
+                        " Disable --amp and rerun; this model is unstable "
+                        "under FP16 autocast."
+                        if self.args.amp
+                        else ""
+                    )
+                    raise FloatingPointError(
+                        f"Non-finite loss on dataset={self.dataset_name}, epoch={epoch}."
+                        f"{amp_hint}"
+                    )
+                training_loss = float(training_loss_tensor)
 
                 # Preserve the existing scheduler/evaluation order.
                 self.scheduler.step()
@@ -481,11 +514,15 @@ class Trainer:
                         auroc_device=self.args.eval_auroc_device,
                     )
 
+                eval_start = time.perf_counter()
                 evaluation_result, _evaluation_profile = profile_evaluation(
                     self.args.profile and epoch == self.args.eval_start_epoch,
                     self.run_dir,
                     evaluate,
                 )
+                torch.cuda.synchronize()
+                eval_seconds = time.perf_counter() - eval_start
+                epoch_seconds = time.perf_counter() - epoch_start
                 (
                     acc,
                     f1,
@@ -510,6 +547,9 @@ class Trainer:
                     "cdice": cdice,
                     "threshold": EVALUATION_THRESHOLD,
                     "lr": current_lr,
+                    "train_seconds": train_seconds,
+                    "eval_seconds": eval_seconds,
+                    "epoch_seconds": epoch_seconds,
                 }
                 evaluated_rows.append(dict(row))
                 writer.writerow(row)
@@ -526,6 +566,9 @@ class Trainer:
                         "val_auc": auc,
                         "val_dice": dice,
                         "val_cdice": cdice,
+                        "train_seconds": train_seconds,
+                        "eval_seconds": eval_seconds,
+                        "epoch_seconds": epoch_seconds,
                         "val_threshold": EVALUATION_THRESHOLD,
                         "lr": current_lr,
                     }
@@ -536,8 +579,17 @@ class Trainer:
                     f"IoU: {iou:.4f} | Recall: {recall:.4f} | "
                     f"Specificity: {specificity:.4f} | DiceScore: {dice:.4f} | "
                     f"cDice: {cdice:.4f} | "
-                    f"AUC: {auc:.5f}"
+                    f"AUC: {auc:.5f} | Train: {train_seconds:.2f}s | "
+                    f"Eval: {eval_seconds:.2f}s | Total: {epoch_seconds:.2f}s"
                 )
+
+                if self.args.stop_after_epoch:
+                    checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
+                    torch.save(
+                        {"model_state_dict": checkpoint_model.state_dict(),
+                         "epoch": epoch, "metrics": row},
+                        self.run_dir / f"epoch_{epoch}.pt",
+                    )
 
                 if candidate_is_better(row, best_row):
                     best_row = dict(row)
@@ -655,6 +707,7 @@ def wandb_config(
         "persistent_workers": args.persistent_workers,
         "amp": args.amp,
         "eval_amp": args.eval_amp,
+        "amp_native_norm": args.amp_native_norm,
         "eval_batch_size": args.eval_batch_size,
         "eval_auroc_device": args.eval_auroc_device,
         "eval_every": args.eval_every,
@@ -758,6 +811,10 @@ def gpu_worker(
                             )
                         model_kwargs["width"] = args.model_width
                     model = model_class(1, 1, **model_kwargs).cuda()
+                    if args.amp_native_norm:
+                        for layer in model.modules():
+                            if hasattr(layer, "native_amp"):
+                                layer.native_amp = True
                     if args.channels_last:
                         model.to(memory_format=torch.channels_last)
                     model_module_path = str(Path(inspect.getfile(model_class)).resolve())
@@ -782,6 +839,7 @@ def gpu_worker(
                         gpu_id,
                         model_module_path,
                     )
+                    write_json(run_dir / "run_config.json", config)
                     print(
                         f"[GPU {gpu_id}] starting experiment_id={args.experiment_id} "
                         f"model={args.model} dataset={dataset_name} seed={args.seed}"
