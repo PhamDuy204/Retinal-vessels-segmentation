@@ -1,133 +1,73 @@
-"""SGMA-Net implementation aligned with the paper module names."""
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from modules import *
+from bottle_neck import *
+import random
 
-from __future__ import annotations
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-try:
-    from .bottle_neck import RHMA
-    from .modules import DSConvBlock, MDSA, SAG, SGWL
-except ImportError:
-    from bottle_neck import RHMA
-    from modules import DSConvBlock, MDSA, SAG, SGWL
-
-
-class EncoderStage(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int):
+class SegModel(nn.Module):
+    def __init__(self, in_channels,out_channels):
         super().__init__()
-        self.features = DSConvBlock(in_channels, out_channels)
-        self.pool = nn.MaxPool2d(2)
-
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        features = self.features(x)
-        return features, self.pool(features)
-
-
-class DecoderStage(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        spatial_size: int,
-        use_sag: bool,
-        use_mdsa: bool,
-    ):
-        super().__init__()
-        self.up = nn.ConvTranspose2d(in_channels, out_channels, 2, stride=2)
-        self.sag = SAG(out_channels) if use_sag else None
-        self.mdsa = MDSA(out_channels, spatial_size, spatial_size) if use_mdsa else None
-        self.decode = DSConvBlock(2 * out_channels, out_channels)
-
-    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
-        semantic = self.up(x)
-        refined_skip = self.sag(skip, semantic) if self.sag is not None else skip
-        if self.mdsa is not None:
-            refined_skip = self.mdsa(refined_skip)
-        return self.decode(torch.cat((semantic, refined_skip), dim=1))
-
-
-class SGMANet(nn.Module):
-    """Configurable core shared by the full network and paper ablations."""
-
-    def __init__(
-        self,
-        in_channels: int = 1,
-        out_channels: int = 1,
-        width: int = 64,
-        *,
-        use_rhma: bool = True,
-        use_sag: bool = True,
-        use_mdsa: bool = True,
-        use_sgwl: bool = True,
-    ):
-        super().__init__()
-        if width < 16 or width % 4:
-            raise ValueError("width must be a multiple of 4 and at least 16")
-
-        c1, c2, c3, cb = width // 4, width // 2, width, width
-        self.use_sgwl = use_sgwl
-
-        self.encoder1 = EncoderStage(in_channels, c1)
-        self.encoder2 = EncoderStage(c1, c2)
-        self.encoder3 = EncoderStage(c2, c3)
-        self.bottleneck_conv = DSConvBlock(c3, cb)
-        self.rhma = RHMA(cb) if use_rhma else nn.Identity()
-        self.bottleneck_mdsa = MDSA(cb, 8, 8) if use_mdsa else nn.Identity()
-
-        self.decoder1 = DecoderStage(cb, c3, 16, use_sag, use_mdsa)
-        self.decoder2 = DecoderStage(c3, c2, 32, use_sag, use_mdsa)
-        self.decoder3 = DecoderStage(c2, c1, 64, use_sag, use_mdsa)
-
-        self.head1 = nn.Conv2d(c3, out_channels, 1)
-        self.head2 = nn.Conv2d(c2, out_channels, 1)
-        self.head3 = nn.Conv2d(c1, out_channels, 1)
-        self.sgwl = SGWL(output_size=64) if use_sgwl else None
-
-    @staticmethod
-    def _resize_prediction(prediction: torch.Tensor) -> torch.Tensor:
-        if prediction.shape[-2:] == (64, 64):
-            return prediction
-        return F.interpolate(
-            prediction, size=(64, 64), mode="bilinear", align_corners=False
+        self.out_channels=out_channels
+        # self.eps = 1e-7
+        self.down_0=down_sampling(in_channels,32,(64,64)) #B,64,32,32
+        self.down_1=down_sampling(32,32,(32,32)) #B,128,16,16
+        self.down_2=down_sampling(32,32,(16,16))#B,256,8,8
+        self.bneck=nn.Sequential(CAB_1(32),BottleNeck_2(32),MAB(32,(8,8)),CAB(32))
+        self.up_0=up_sampling(32,32,32,(16,16)) #B,64,32,32
+        self.up_1=up_sampling(32,32,32,(32,32)) #B,128,16,16
+        
+        self.up_2=up_sampling(32,32,32,(64,64))#B,256,8,8
+        self.sig=nn.Identity()
+        self.out_fut=nn.Sequential(
+            ConvFunc(32,with_activate=True),
+            nn.Conv2d(32,out_channels,1,bias=False),
         )
+        self.out=nn.Sequential(
+            ConvFunc(32,with_activate=True),
+            nn.Conv2d(32,out_channels,1,bias=False),
+        )
+        self.up_f_0=nn.Sequential(
+            UpFunc(32,32,4),
+            ConvFunc(32,with_activate=True),
+            nn.Conv2d(32,out_channels,1,bias=False)
+            # nn.Sigmoid()
+        )
+        self.up_f_1=nn.Sequential(
+            UpFunc(32,32,2),
+            ConvFunc(32,with_activate=True),
+            nn.Conv2d(32,out_channels,1,bias=False)
+            # nn.Sigmoid()
+        )
+        self.swl=swl((64,64))
+        self._init_weights()    
+    def _init_weights(self):
+        # init conv đi qua Sigmoid
+        for layer in [self.out_fut, self.out, self.up_f_0, self.up_f_1]:
+            last_conv = layer[-1]  # conv cuối
+            if isinstance(last_conv, nn.Conv2d):
+                nn.init.xavier_uniform_(last_conv.weight)
+                if last_conv.bias is not None:
+                    nn.init.constant_(last_conv.bias, 0)
+    def forward(self, x):
+        b,c,h,width=x.shape
+        x_0,down_0=self.down_0(x)
+        x_1,down_1=self.down_1(down_0)
+        x_2,down_2=self.down_2(down_1)
+        bneck=self.bneck(down_2)
+        x_up_0,x_up_0_t=self.up_0(bneck,x_2,bneck) #B,256,16,16
+        x_up_1,x_up_1_t=self.up_1(x_up_0,x_1,x_up_0_t) #B,128,32,32
+        x_up_2,fut=self.up_2(x_up_1,x_0,x_up_1_t) #B,64,64,64
 
-    def forward(self, x: torch.Tensor):
-        e1, x = self.encoder1(x)
-        e2, x = self.encoder2(x)
-        e3, x = self.encoder3(x)
-
-        x = self.bottleneck_conv(x)
-        x = self.rhma(x)
-        x = self.bottleneck_mdsa(x)
-
-        d1 = self.decoder1(x, e3)
-        d2 = self.decoder2(d1, e2)
-        d3 = self.decoder3(d2, e1)
-
-        s1 = self._resize_prediction(self.head1(d1))
-        s2 = self._resize_prediction(self.head2(d2))
-        s3 = self.head3(d3)
-
-        final_logits = self.sgwl(s1, s2, s3) if self.sgwl is not None else s3
+        fut=self.out_fut(fut)
+        out=self.out(x_up_2)
+        out_1=self.up_f_1(x_up_1)
+        out_0=self.up_f_0(x_up_0)
+        # print(merge_out.shape)
+        # print(computed_w.shape)
+        # final_out=((computed_w*merge_out).view(b,4,self.out_channels,h,width)).sum(dim=1)
+        final_out=self.swl(out,out_0,out_1,fut)
+        final_out=self.sig(final_out)
         if self.training:
-            if self.sgwl is not None:
-                return final_logits, s1, s2, s3
-            return s3, s1, s2
-        return torch.sigmoid(final_logits)
-
-
-class SegModel(SGMANet):
-    """Default full SGMA-Net used by --model our_net."""
-
-    def __init__(self, in_channels: int, out_channels: int, width: int = 64):
-        super().__init__(
-            in_channels,
-            out_channels,
-            width,
-            use_rhma=True,
-            use_sag=True,
-            use_mdsa=True,
-            use_sgwl=True,
-        )
+           return final_out,self.sig(out),self.sig(out_0),self.sig(out_1),self.sig(fut)
+        return F.sigmoid(final_out)

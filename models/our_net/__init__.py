@@ -1,1 +1,1 @@
-from .our_net import SGMANet, SegModel
+from .our_net import SegModel
