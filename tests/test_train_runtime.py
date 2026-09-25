@@ -15,6 +15,7 @@ def test_optimized_our_net_defaults():
     assert args.amp_dtype == "bf16"
     assert args.amp_native_norm is True
     assert args.eval_amp is True
+    assert args.eval_amp_dtype == "bf16"
     assert args.eval_batch_size == 256
     assert args.micro_batch_size == 48
     assert args.fast_nondeterministic is True

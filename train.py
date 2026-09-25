@@ -148,6 +148,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "defaults on for our_net mixed-precision training"
         ),
     )
+    parser.add_argument(
+        "--eval-amp-dtype", choices=("fp16", "bf16"), default="bf16",
+        help="Evaluation AMP dtype; BF16 avoids FP16 activation overflow in our_net",
+    )
     parser.add_argument("--eval-batch-size", type=int, default=256)
     parser.add_argument("--eval-auroc-device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--eval-every", type=int, default=1)
@@ -509,6 +513,7 @@ class Trainer:
                         threshold=EVALUATION_THRESHOLD,
                         non_blocking=True,
                         amp=self.args.eval_amp,
+                        amp_dtype={"fp16": torch.float16, "bf16": torch.bfloat16}[self.args.eval_amp_dtype],
                         profile=self.args.profile and epoch == self.args.eval_start_epoch,
                         batch_size=self.args.eval_batch_size,
                         tta_flips=self.args.eval_tta_flips,
@@ -607,6 +612,17 @@ class Trainer:
 
         if best_row is None or best_params is None:
             raise RuntimeError("Training completed without an evaluated epoch")
+
+        # Retain the final weights for precision re-evaluation, independently of
+        # the metric-selected checkpoint (R3 otherwise lost epoch 60).
+        checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
+        torch.save(
+            {"model_state_dict": checkpoint_model.state_dict(),
+             "epoch": epoch, "experiment_id": self.args.experiment_id,
+             "model": self.args.model, "dataset": self.dataset_name,
+             "seed": self.args.seed},
+            self.run_dir / "last.pt",
+        )
 
         checkpoint_path = self.run_dir / "best.pt"
         torch.save(
@@ -710,6 +726,7 @@ def wandb_config(
         "persistent_workers": args.persistent_workers,
         "amp": args.amp,
         "eval_amp": args.eval_amp,
+        "eval_amp_dtype": args.eval_amp_dtype,
         "amp_native_norm": args.amp_native_norm,
         "eval_batch_size": args.eval_batch_size,
         "eval_auroc_device": args.eval_auroc_device,

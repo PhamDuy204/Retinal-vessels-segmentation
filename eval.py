@@ -89,6 +89,7 @@ def _forward_in_batches(
     amp: bool,
     profile: bool,
     pad_final_batch: bool,
+    amp_dtype: torch.dtype = torch.bfloat16,
 ) -> torch.Tensor:
     if batch_size <= 0:
         chunk_count = max(image.shape[0] // 128, 1)
@@ -101,7 +102,7 @@ def _forward_in_batches(
         outputs = []
         for image_batch, edge_batch in zip(image_batches, edge_batches):
             with _profile_region(profile, "evaluation_model_forward"):
-                with torch.amp.autocast("cuda", enabled=amp):
+                with torch.amp.autocast("cuda", enabled=amp, dtype=amp_dtype):
                     if forward_args == 2:
                         output = model(image_batch, edge_batch)
                     else:
@@ -124,7 +125,7 @@ def _forward_in_batches(
                 edge_batch = torch.cat((edge_batch, edge_padding), dim=0)
 
         with _profile_region(profile, "evaluation_model_forward"):
-            with torch.amp.autocast("cuda", enabled=amp):
+            with torch.amp.autocast("cuda", enabled=amp, dtype=amp_dtype):
                 if forward_args == 2:
                     output = model(image_batch, edge_batch)
                 else:
@@ -168,6 +169,7 @@ def _forward_with_tta(
     profile: bool,
     pad_final_batch: bool,
     tta_mode: str,
+    amp_dtype: torch.dtype = torch.bfloat16,
 ) -> torch.Tensor:
     probability_maps = []
     for transform, inverse in _tta_transforms(tta_mode):
@@ -182,6 +184,7 @@ def _forward_with_tta(
             amp,
             profile,
             pad_final_batch=pad_final_batch,
+            amp_dtype=amp_dtype,
         )
         probability_maps.append(inverse(tta_probability))
     return torch.stack(probability_maps, dim=0).mean(dim=0)
@@ -203,6 +206,7 @@ def eval_for_seg(
     tta_mode="none",
     channels_last=False,
     auroc_device="cuda",
+    amp_dtype: torch.dtype = torch.bfloat16,
 ):
     torch.cuda.set_device(gpu_id)
     device = torch.device("cuda", gpu_id)
@@ -219,7 +223,7 @@ def eval_for_seg(
 
     with torch.inference_mode():
         iterator = iter(val_loader)
-        for _ in tqdm(range(len(val_loader))):
+        for image_index in tqdm(range(len(val_loader))):
             with _profile_region(profile, "evaluation_data_loading"):
                 sample = next(iterator)
             image, mask, edge = sample.values()
@@ -272,7 +276,17 @@ def eval_for_seg(
                 profile,
                 False,
                 active_tta_mode,
+                amp_dtype=amp_dtype,
             )
+
+            # NaN >= threshold is False: without this check, invalid predictions
+            # silently become background and poison both metrics and selection.
+            if not bool(torch.isfinite(probability_map).all()):
+                raise FloatingPointError(
+                    f"Non-finite evaluation output at image batch {image_index + 1} "
+                    f"(amp={amp}, amp_dtype={amp_dtype}). "
+                    "Use BF16 evaluation or disable eval AMP; metrics were not updated."
+                )
 
             # Reconstruct once; the old prob/prob_1 paths were identical.
             if stride is not None:
