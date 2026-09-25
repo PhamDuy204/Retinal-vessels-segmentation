@@ -266,7 +266,7 @@ If this code is useful in your research, please cite:
 ```bibtex
 @article{nguyen-tat2027sgmanet,
   title   = {SGMA-Net: A lightweight mamba-attention network for thin-vessel segmentation in low-contrast fundus images with statistical feature refinement},
-  author  = {Nguyen-Tat, Thien B. and Pham Dinh Anh, Duy and Tan, Sang Hua},
+  author  = {Thien B. Nguyen-Tat and Duy Pham Dinh Anh,  Tan, Sang Hua},
   journal = {Expert Systems with Applications},
   volume  = {333},
   pages   = {134242},
