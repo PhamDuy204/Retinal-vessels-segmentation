@@ -25,6 +25,17 @@ EVAL_BATCH_SIZE = 256
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".ppm", ".bmp", ".webp"}
 
 
+def select_device() -> torch.device:
+    """Use CUDA when an available GPU can initialize; otherwise fall back to CPU."""
+    if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+        try:
+            torch.cuda.init()
+            return torch.device("cuda:0")
+        except (RuntimeError, AssertionError):
+            pass
+    return torch.device("cpu")
+
+
 def read_image(source: str | Path | BytesIO) -> np.ndarray:
     with Image.open(source) as image:
         return np.asarray(ImageOps.exif_transpose(image).convert("RGB"))
@@ -134,7 +145,7 @@ def gradcam(model: torch.nn.Module, rgb: np.ndarray, device: torch.device):
         low, high = np.percentile(region, (65, 99.5))
         strength = np.clip((values - low) / max(high - low, 1e-8), 0, 1)
         alpha = (0.82 * strength ** 1.2 * fundus)[..., None]
-        accent = np.array([10, 174, 245], dtype=np.float32)
+        accent = np.array([35, 230, 90], dtype=np.float32)
         return ((1 - alpha) * rgb + alpha * accent).clip(0, 255).astype(np.uint8)
     finally:
         hook.remove()

@@ -37,12 +37,12 @@ A retinal imaging workbench: quiet cool surfaces, a pale image canvas, and clear
 
 - Audience: researchers inspecting SGMA-Net DRIVE checkpoints.
 - Register: one-screen product utility in English.
-- Signature: the black prediction canvas changes in place to a mask and then a Grad-CAM overlay.
+- Signature: the prediction canvas changes in place to a green-on-black mask and then a green Grad-CAM overlay.
 - Runtime mapping: Streamlit light theme lives in `.streamlit/config.toml`; preview CSS variables and component rules live in `demo.py`. Streamlit owns native select, upload, and button behavior.
 
 ## Colors
 
-The light `paper` background, dark `ink` titles, and `sea` action color keep diagnostic imagery prominent. The pale `canvas` reserves a stable position for source and result previews; the downloaded 0/1 mask keeps its numerical values even though the screen displays teal vessels on a light background. `focus` marks keyboard focus.
+The light `paper` background, dark `ink` titles, and `sea` action color keep diagnostic imagery prominent. The pale `canvas` reserves a stable position for source and result previews; the downloaded 0/1 mask keeps its numerical values even though the screen displays green vessels on black. The pale red note under the result explains the first-run warmup. `focus` marks keyboard focus.
 
 ## Typography
 
@@ -54,7 +54,7 @@ Two equal columns (source and output) on desktop; Streamlit stacks them on narro
 
 ## Elevation & Depth
 
-Flat surfaces and a thin border around the upload area. No decorative shadows compete with the image.
+Flat surfaces and a borderless upload button beneath the source image. No decorative shadows compete with the image.
 
 ## Shapes
 

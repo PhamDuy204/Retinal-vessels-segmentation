@@ -1,8 +1,23 @@
 """A DRIVE-shaped overlap regression check for the interactive inference grid."""
+from unittest.mock import patch
+
 import numpy as np
+import pytest
 import torch
 
-from inference_core import prepare_patches, reconstruct
+from inference_core import prepare_patches, reconstruct, select_device
+
+
+@pytest.mark.parametrize(
+    ("available", "count", "init_failure", "expected"),
+    [(True, 1, False, "cuda:0"), (False, 0, False, "cpu"),
+     (True, 0, False, "cpu"), (True, 1, True, "cpu")],
+)
+def test_select_device(available, count, init_failure, expected):
+    with patch("torch.cuda.is_available", return_value=available), \
+         patch("torch.cuda.device_count", return_value=count), \
+         patch("torch.cuda.init", side_effect=RuntimeError("CUDA unavailable") if init_failure else None):
+        assert str(select_device()) == expected
 
 
 def test_fast_grid_reconstructs_drive_shape_without_uncovered_pixels():

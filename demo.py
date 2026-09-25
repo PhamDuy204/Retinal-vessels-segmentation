@@ -13,7 +13,7 @@ import streamlit as st
 import torch
 from PIL import Image
 
-from inference_core import IMAGE_EXTENSIONS, gradcam, load_checkpoint, predict, read_image
+from inference_core import IMAGE_EXTENSIONS, gradcam, load_checkpoint, predict, read_image, select_device
 
 
 def paths(values, suffixes):
@@ -59,10 +59,9 @@ def png_bytes(array):
 
 
 def mask_preview(mask):
-    """Light display palette; the downloadable mask keeps literal 0/1 pixels."""
-    preview = np.empty((*mask.shape, 3), dtype=np.uint8)
-    preview[:] = (245, 250, 252)
-    preview[mask.astype(bool)] = (20, 109, 134)
+    """Black background, green vessels; downloaded mask remains literal 0/1."""
+    preview = np.zeros((*mask.shape, 3), dtype=np.uint8)
+    preview[mask.astype(bool)] = (40, 220, 85)
     return preview
 
 
@@ -84,9 +83,15 @@ h1,h2,h3 {font-family:Georgia,serif;color:var(--ink)}
   color:#48697a;font-size:.9rem;letter-spacing:.02em;text-align:center;padding:2rem;
 }
 [data-testid="stFileUploaderDropzone"] {
-  background:white;border:1px solid var(--line);border-radius:10px;padding:.5rem;
+  background:transparent !important;border:0 !important;box-shadow:none !important;
+  min-height:0 !important;padding:0 !important;justify-content:flex-start;
 }
 [data-testid="stFileUploaderDropzoneInstructions"] {display:none}
+.warmup-note {
+  margin-top:.75rem;padding:.6rem .85rem;border-radius:8px;
+  background:#fff0ef;border:1px solid #f3cecb;color:#9a4040;
+  font-size:.86rem;line-height:1.4;
+}
 div.stButton > button[kind="primary"] {background:var(--sea);border-color:var(--sea);color:white}
 div.stButton > button:focus-visible, div.stSelectbox:focus-within {
   outline:3px solid #50a9bd;outline-offset:2px
@@ -175,9 +180,11 @@ with right:
             st.image(mask_preview(current["mask"]),
                      caption="Vessel mask · download contains 0 background / 1 vessel",
                      width="stretch")
+    st.markdown('<div class="warmup-note" role="note">The first prediction loads the model and warms up CUDA when available. Later GPU predictions are faster.</div>',
+                unsafe_allow_html=True)
     st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
     if st.button("Predict", type="primary", width="stretch", disabled=rgb is None):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = select_device()
         if device.type == "cpu":
             torch.set_num_threads(2)
         try:
