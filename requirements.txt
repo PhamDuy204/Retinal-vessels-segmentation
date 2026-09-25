@@ -28,4 +28,5 @@ mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba
 mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.12"
 mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp313-cp313-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.13"
 streamlit
+safetensors
 gdown 
