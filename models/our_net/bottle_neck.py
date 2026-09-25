@@ -256,8 +256,16 @@ class BottleNeck_2(nn.Module):
         b, c, h, w = x.shape
 
 
-        seq = x.permute(0, 2, 3, 1).contiguous().view(b, h * w, c) 
-        forward_states = self.mamba(seq) + seq    
+        seq = x.permute(0, 2, 3, 1).contiguous().view(b, h * w, c)
+        # Mamba2's fused low-precision path can become numerically unstable
+        # in FP16 inference and BF16 training/backward. Keep the rest of the
+        # network mixed precision, but run only Mamba2 itself in FP32.
+        if seq.dtype in (torch.float16, torch.bfloat16):
+            with torch.amp.autocast(seq.device.type, enabled=False):
+                mamba_states = self.mamba(seq.float()).to(seq.dtype)
+        else:
+            mamba_states = self.mamba(seq)
+        forward_states = mamba_states + seq
         merged = self.out(forward_states)+forward_states
         out = merged.view(b, h, w, c).permute(0, 3, 1, 2).contiguous()
         return out

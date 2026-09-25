@@ -79,7 +79,7 @@ def generate_experiment_id(output_root: str | os.PathLike[str]) -> str:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train retinal vessel segmentation models")
     parser.add_argument("-b", "--batch_size", type=int, default=4)
-    parser.add_argument("-e", "--epochs", type=int, default=100)
+    parser.add_argument("-e", "--epochs", type=int, default=60)
     parser.add_argument("-lf", "--loss", type=str, default="main_loss")
     parser.add_argument("-m", "--model", type=str, default="our_net")
     parser.add_argument("--model-width", type=int, default=0, help="Optional width/channels override for models that accept a width argument")
@@ -148,10 +148,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "defaults on for our_net mixed-precision training"
         ),
     )
+    parser.add_argument(
+        "--eval-amp-dtype", choices=("fp16", "bf16"), default="bf16",
+        help="Evaluation AMP dtype; BF16 avoids FP16 activation overflow in our_net",
+    )
     parser.add_argument("--eval-batch-size", type=int, default=256)
     parser.add_argument("--eval-auroc-device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--eval-every", type=int, default=1)
-    parser.add_argument("--eval-start-epoch", type=int, default=1)
+    parser.add_argument("--eval-start-epoch", type=int, default=50)
     parser.add_argument("--eval-tta-flips", action="store_true")
     parser.add_argument("--eval-tta-mode", choices=("none", "flips", "d4"), default="none")
     parser.add_argument("--ema-decay", type=float, default=0.0)
@@ -159,7 +163,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--micro-batch-size", type=int, default=48)
     parser.add_argument("--prefetch-factor", type=int, default=2)
     parser.add_argument("--channels-last", action="store_true")
-    parser.add_argument("--amp-dtype", choices=("fp32", "fp16", "bf16"), default="fp16")
+    parser.add_argument("--amp-dtype", choices=("fp32", "fp16", "bf16"), default="bf16")
     parser.add_argument(
         "--fast-nondeterministic",
         action=argparse.BooleanOptionalAction,
@@ -459,12 +463,15 @@ class Trainer:
                 torch.cuda.synchronize()
                 train_seconds = time.perf_counter() - epoch_start
                 if not bool(loss_is_finite):
-                    amp_hint = (
-                        " Disable --amp and rerun; this model is unstable "
-                        "under FP16 autocast."
-                        if self.args.amp
-                        else ""
-                    )
+                    if self.args.amp_dtype == "fp16":
+                        amp_hint = (
+                            " Retry with --amp-dtype bf16 (preferred on supported GPUs) "
+                            "or disable AMP for full FP32."
+                        )
+                    elif self.args.amp:
+                        amp_hint = " Disable AMP and rerun in full FP32."
+                    else:
+                        amp_hint = ""
                     raise FloatingPointError(
                         f"Non-finite loss on dataset={self.dataset_name}, epoch={epoch}."
                         f"{amp_hint}"
@@ -506,6 +513,7 @@ class Trainer:
                         threshold=EVALUATION_THRESHOLD,
                         non_blocking=True,
                         amp=self.args.eval_amp,
+                        amp_dtype={"fp16": torch.float16, "bf16": torch.bfloat16}[self.args.eval_amp_dtype],
                         profile=self.args.profile and epoch == self.args.eval_start_epoch,
                         batch_size=self.args.eval_batch_size,
                         tta_flips=self.args.eval_tta_flips,
@@ -604,6 +612,17 @@ class Trainer:
 
         if best_row is None or best_params is None:
             raise RuntimeError("Training completed without an evaluated epoch")
+
+        # Retain the final weights for precision re-evaluation, independently of
+        # the metric-selected checkpoint (R3 otherwise lost epoch 60).
+        checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
+        torch.save(
+            {"model_state_dict": checkpoint_model.state_dict(),
+             "epoch": epoch, "experiment_id": self.args.experiment_id,
+             "model": self.args.model, "dataset": self.dataset_name,
+             "seed": self.args.seed},
+            self.run_dir / "last.pt",
+        )
 
         checkpoint_path = self.run_dir / "best.pt"
         torch.save(
@@ -707,6 +726,7 @@ def wandb_config(
         "persistent_workers": args.persistent_workers,
         "amp": args.amp,
         "eval_amp": args.eval_amp,
+        "eval_amp_dtype": args.eval_amp_dtype,
         "amp_native_norm": args.amp_native_norm,
         "eval_batch_size": args.eval_batch_size,
         "eval_auroc_device": args.eval_auroc_device,
