@@ -48,11 +48,9 @@ The paper protocol uses 64×64 patches, stride 32, and 500 sampled training patc
 - epochs: **60** (or stop after 20 consecutive epochs without a lower epoch-mean training loss)
 - checkpoint: `best.pt` is the epoch with the lowest mean training loss
 - learning rate: `0.0018`
-- patch training: 750 sampled 64×64 patches/image in the current sampler, window split
 - DataLoader: 0 workers, pinned memory, persistent workers disabled
 - training AMP: **BF16 enabled** (wider dynamic range than FP16)
 - native low-precision GroupNorm feature maps for `our_net`
-- evaluation starts at epoch **50** and uses **BF16**, evaluation batch size 256; Mamba2 remains FP32 under AMP
 - micro-batch size 48
 - fused CUDA Adam enabled
 - cuDNN autotuning / fast nondeterministic CUDA path enabled
@@ -127,16 +125,6 @@ during BF16 training. FP16 evaluation also uses the protected MAB path.
 Evaluation raises on non-finite predictions before reconstruction/metric updates.
 Use `--no-eval-amp` for a full FP32 reference. Completed runs also retain
 `last.pt` so the final epoch can be re-evaluated separately from `best.pt`.
-
-Runtime audit: the current dataset sampler actually returns **750 patches/image**
-regardless of `--patches 500`. This fix preserves that existing sampling behavior
-and the evaluation patch grid; runtime comparisons must use 750 patches/image.
-The paper's 500-patch protocol and this runtime setting are different.
-
-
-Validated DRIVE checkpoints from stability_bneckmabfp32_60e_wandb_20260925
-are stored under checkpoints/stability_bneckmabfp32_60e_wandb_20260925/.
-The selected checkpoint is epoch 58 (best.pt).
 
 > **Mixed-precision safety note:** BF16 is the default because the previous FP16 run on DRIVE produced a non-finite loss late in training, while BF16 keeps the same Tensor Core mixed-precision path with a much wider exponent range. If a dataset/model still produces `NaN`/non-finite loss, keep the other optimized runtime settings and fall back to full FP32 using the command below. FP16 remains available explicitly with `--amp-dtype fp16` for experiments where it is known to be stable.
 
@@ -299,29 +287,3 @@ Without `--checkpoints`, the model selector becomes a checkpoint upload button:
 ```bash
 streamlit run demo.py -- --os win --image_paths data/DRIVE/test/images
 ```
-
-A missing checkpoint uses randomly initialized weights: the output mask is only a pipeline test, **not a valid vessel prediction**. Incompatible or corrupt uploads show an error and require a different checkpoint. Uploaded `.pt` files must contain `model_state_dict`; `.safetensors` files must contain weights matching the architecture selected by `--os`.
-
-Upload PNG/JPEG/TIFF/PPM/BMP/WebP or choose an image path, optionally select or upload a checkpoint,
-then press **Predict**. The right panel shows a binary mask (0 background, 1 vessel);
-the arrow toggles a vessel-focused Grad-CAM overlay on the original image;
-the arrow reverses direction to return to the mask. The mask preview uses green vessels on a black background; Grad-CAM highlights
-vessels in green on the original image and runs only when requested. Downloaded mask PNG contains literal pixel values 0/1.
-
-The UI loads `.pt` state dicts with `weights_only=True` and supports exported
-`our_net` and `our_net_window` `.safetensors` weights. Export other `our_net` `.pt` checkpoints with
-`python convert_checkpoint.py path/to/best.pt --output inference_models/model.safetensors`.
-The shipped epoch 58 safetensors weights match the `.pt` tensors exactly.
-The Mamba2 CUDA kernels would require custom ONNX operators or a slower scan implementation;
-changing to safetensors improves weight portability but does not speed up the model forward. On the RTX 3060,
-a warmed DRIVE 584×565 inference with a 48×48 overlapping patch grid took
-~0.35–0.38 seconds end to end (first prediction is slower for CUDA warmup).
-The 48×48 grid covers DRIVE with 169 patches; other image sizes choose a
-slightly denser stride where needed so every edge has coverage. Across all
-20 DRIVE test images, per-image F1 versus the previous 32×32 UI grid changed
-by -0.0030 to +0.0038; the pixel disagreement was 0.43–0.56%. This UI speed
-mode is for interactive viewing; paper evaluation still uses the denser 32×8 grid.
-
-The UI automatically selects CUDA when an available GPU initializes and uses CPU otherwise. A note under the result explains the slower first prediction. CPU fallback uses a reference Mamba2 scan with the same checkpoint weights:
-it is functional but took ~23 seconds per DRIVE image with the new grid on the tested machine.
-The <0.4 second target is achieved on the RTX 3060 after warmup, not CPU.
