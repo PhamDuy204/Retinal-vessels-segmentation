@@ -8,7 +8,7 @@ colors:
   line: "#d6e2e8"
   paper: "#f3f8fa"
   focus: "#50a9bd"
-  canvas: "#07131d"
+  canvas: "#e9f1f4"
 typography:
   display: { fontFamily: "Georgia, serif" }
   body: { fontFamily: "system-ui, sans-serif" }
@@ -31,18 +31,18 @@ components:
 
 ### Creative North Star
 
-A retinal imaging workbench: quiet cool surfaces, a dark output canvas, and clear distinction between original image, binary mask, and explanatory heatmap.
+A retinal imaging workbench: quiet cool surfaces, a pale image canvas, and clear distinction between original image, binary mask, and explanatory heatmap.
 
 ### Product context and register
 
 - Audience: researchers inspecting SGMA-Net DRIVE checkpoints.
 - Register: one-screen product utility in English.
 - Signature: the black prediction canvas changes in place to a mask and then a Grad-CAM overlay.
-- Runtime mapping: values in this file are mirrored by the CSS variables and component rules in `demo.py`; Streamlit owns native select, upload, and button behavior.
+- Runtime mapping: Streamlit light theme lives in `.streamlit/config.toml`; preview CSS variables and component rules live in `demo.py`. Streamlit owns native select, upload, and button behavior.
 
 ## Colors
 
-The light `paper` background, dark `ink` titles, and `sea` action color keep diagnostic imagery prominent. The `canvas` reserves a stable position for results, while `focus` is used for keyboard focus.
+The light `paper` background, dark `ink` titles, and `sea` action color keep diagnostic imagery prominent. The pale `canvas` reserves a stable position for source and result previews; the downloaded 0/1 mask keeps its numerical values even though the screen displays teal vessels on a light background. `focus` marks keyboard focus.
 
 ## Typography
 
@@ -50,7 +50,7 @@ Georgia marks the tool title and section headings. System sans is used for contr
 
 ## Layout
 
-Two unequal columns (source and larger output) on desktop; Streamlit stacks columns on narrow screens. The empty canvas has a minimum height to reserve space before prediction.
+Two equal columns (source and output) on desktop; Streamlit stacks them on narrow screens. Source and result use the same 565:584 preview aspect ratio so choosing an image does not shift the controls unexpectedly. Upload sits beneath the source image.
 
 ## Elevation & Depth
 

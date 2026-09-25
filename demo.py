@@ -36,7 +36,7 @@ def paths(values, suffixes):
 def options():
     parser = argparse.ArgumentParser(description="Retinal vessel inference UI")
     parser.add_argument("--checkpoints", nargs="+", required=True,
-                        help="One or more .pt checkpoints, directories, or globs.")
+                        help="One or more .pt/.safetensors checkpoints, directories, or globs.")
     parser.add_argument("--image_paths", nargs="*", default=[],
                         help="Optional images, directories, or globs for the image menu.")
     argv = sys.argv[1:]
@@ -58,6 +58,14 @@ def png_bytes(array):
     return buffer.getvalue()
 
 
+def mask_preview(mask):
+    """Light display palette; the downloadable mask keeps literal 0/1 pixels."""
+    preview = np.empty((*mask.shape, 3), dtype=np.uint8)
+    preview[:] = (245, 250, 252)
+    preview[mask.astype(bool)] = (20, 109, 134)
+    return preview
+
+
 st.set_page_config(page_title="SGMA-Net · Vessel viewer", layout="wide")
 st.markdown("""
 <style>
@@ -65,36 +73,43 @@ st.markdown("""
 .stApp {background:var(--paper);color:var(--ink)}
 .block-container {max-width:1200px;padding-top:2.3rem}
 h1,h2,h3 {font-family:Georgia,serif;color:var(--ink)}
-[data-testid="stFileUploader"] {background:white;border:1px solid var(--line);border-radius:12px;padding:12px}
-[data-testid="stFileUploaderDropzone"] {background:#f7fbfd}
-[data-testid="stImage"] img {border-radius:8px}
+[data-testid="stImage"] img {border-radius:10px}
+.st-key-source_view [data-testid="stImage"] img,
+.st-key-result_view [data-testid="stImage"] img {
+  aspect-ratio:565 / 584;object-fit:contain;background:#e9f1f4;width:100%;
+}
+.preview-placeholder, .result-placeholder {
+  aspect-ratio:565 / 584;border:1px solid var(--line);border-radius:10px;
+  background:#e9f1f4;display:flex;align-items:center;justify-content:center;
+  color:#48697a;font-size:.9rem;letter-spacing:.02em;text-align:center;padding:2rem;
+}
+[data-testid="stFileUploaderDropzone"] {
+  background:white;border:1px solid var(--line);border-radius:10px;padding:.5rem;
+}
+[data-testid="stFileUploaderDropzoneInstructions"] {display:none}
 div.stButton > button[kind="primary"] {background:var(--sea);border-color:var(--sea);color:white}
-div.stButton > button:focus-visible, div.stSelectbox:focus-within {outline:3px solid #50a9bd;outline-offset:2px}
-.result-frame {background:#07131d;border-radius:12px;min-height:420px;display:flex;
-align-items:center;justify-content:center;color:#acc1cc;font-family:monospace;letter-spacing:.05em}
+div.stButton > button:focus-visible, div.stSelectbox:focus-within {
+  outline:3px solid #50a9bd;outline-offset:2px
+}
 .small-label {font-family:monospace;letter-spacing:.12em;color:#466676;font-size:.78rem}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="small-label">RETINAL IMAGING / DRIVE</div>', unsafe_allow_html=True)
 st.title("Vessel viewer")
-st.caption("Upload a fundus image or choose one from the configured paths. Predictions use the validated DRIVE patch protocol.")
+st.caption("Select a fundus image, choose a checkpoint, and inspect the vessel mask.")
 
 try:
     checkpoints, image_paths = options()
 except SystemExit:
-    st.error("Start with: streamlit run demo.py -- --checkpoints checkpoints/.../best.pt")
+    st.error("Start with: streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors")
     st.stop()
 
-left, right = st.columns([1, 1.35], gap="large")
+left, right = st.columns(2, gap="large")
 with left:
     st.subheader("Input")
-    uploaded = st.file_uploader("Drag or select a fundus image",
-                                type=sorted(ext.lstrip(".") for ext in IMAGE_EXTENSIONS))
-    image_label = st.selectbox("Image path", ["Choose an image…"] + [str(p) for p in image_paths],
-                               disabled=bool(uploaded), help="Available when no image is uploaded.")
-    selected_checkpoint = st.selectbox("Model checkpoint", checkpoints,
-                                       format_func=lambda p: f"{p.parent.name} / {p.name}")
+    uploaded = st.session_state.get("image_upload")
+    image_label = st.session_state.get("image_selector", "Choose an image…")
     source_key = None
     rgb = None
     if uploaded is not None:
@@ -111,8 +126,20 @@ with left:
             rgb = read_image(image_path)
         except Exception as exc:
             st.error(f"Cannot read image path: {exc}")
-    if rgb is not None:
-        st.image(rgb, caption=f"Source image · {rgb.shape[1]} × {rgb.shape[0]}", width="stretch")
+    with st.container(key="source_view"):
+        if rgb is None:
+            st.markdown('<div class="preview-placeholder">Choose an image below or upload one from your computer</div>',
+                        unsafe_allow_html=True)
+        else:
+            st.image(rgb, caption=f"Source image · {rgb.shape[1]} × {rgb.shape[0]}",
+                     width="stretch")
+    st.file_uploader("Upload or replace image", key="image_upload",
+                     type=sorted(ext.lstrip(".") for ext in IMAGE_EXTENSIONS))
+    st.selectbox("Image path", ["Choose an image…"] + [str(p) for p in image_paths],
+                 key="image_selector", disabled=uploaded is not None,
+                 help="Choose a path when no upload is active.")
+    selected_checkpoint = st.selectbox("Model checkpoint", checkpoints,
+                                       format_func=lambda p: f"{p.parent.name} / {p.name}")
 
 with right:
     label, arrow = st.columns([8, 1])
@@ -122,27 +149,33 @@ with right:
     current = st.session_state.get("result")
     if current is None or current["key"] != active_key:
         current = None
+    showing_cam = bool(current is not None and st.session_state.get("show_cam", False))
     with arrow:
-        if st.button("→", help="Switch between binary mask and Grad-CAM", disabled=current is None):
-            st.session_state["show_cam"] = not st.session_state.get("show_cam", False)
-    if current is None:
-        st.markdown('<div class="result-frame">MASK / AWAITING PREDICTION</div>', unsafe_allow_html=True)
-    elif st.session_state.get("show_cam", False):
-        if "cam" not in current:
-            with st.spinner("Computing Grad-CAM over all patches…"):
-                try:
-                    current["cam"] = gradcam(current["model"], current["rgb"], current["device"])
-                except Exception as exc:
-                    st.error(f"Grad-CAM failed: {exc}")
-        if "cam" in current:
-            st.image(current["cam"], caption="Grad-CAM over source image", width="stretch")
-    else:
-        st.image(current["mask"] * 255, caption="Binary mask · 0 background / 1 vessel",
-                 clamp=True, width="stretch")
-        st.download_button("Download 0/1 mask (PNG)", png_bytes(current["mask"]),
-                           file_name="vessel_mask_0_1.png", mime="image/png")
-        st.caption(f"Inference: {current['seconds']:.3f}s · {current['device'].type.upper()} · warmed model")
-
+        if st.button("←" if showing_cam else "→",
+                     help="Back to vessel mask" if showing_cam else "Show Grad-CAM",
+                     disabled=current is None):
+            st.session_state["show_cam"] = not showing_cam
+            st.rerun()
+    with st.container(key="result_view"):
+        if current is None:
+            st.markdown('<div class="result-placeholder">MASK / AWAITING PREDICTION</div>',
+                        unsafe_allow_html=True)
+        elif showing_cam:
+            if "cam" not in current:
+                with st.spinner("Computing Grad-CAM over all patches…"):
+                    try:
+                        current["cam"] = gradcam(current["model"], current["rgb"],
+                                                current["device"])
+                    except Exception as exc:
+                        st.error(f"Grad-CAM failed: {exc}")
+            if "cam" in current:
+                st.image(current["cam"], caption="Vessel-focused Grad-CAM on source image",
+                         width="stretch")
+        else:
+            st.image(mask_preview(current["mask"]),
+                     caption="Vessel mask · download contains 0 background / 1 vessel",
+                     width="stretch")
+    st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
     if st.button("Predict", type="primary", width="stretch", disabled=rgb is None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if device.type == "cpu":
@@ -158,3 +191,7 @@ with right:
             st.rerun()
         except Exception as exc:
             st.error(f"Prediction failed: {exc}")
+    if current is not None:
+        st.caption(f"Inference: {current['seconds']:.3f}s · {current['device'].type.upper()}")
+        st.download_button("Download 0/1 mask (PNG)", png_bytes(current["mask"]),
+                           file_name="vessel_mask_0_1.png", mime="image/png")

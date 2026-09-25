@@ -61,10 +61,14 @@ def prepare_patches(rgb: np.ndarray, device: torch.device):
     height, width = image.shape[-2:]
     image = mirror_padding_v2(image.unsqueeze(0).to(device))
     padded_size = image.shape[-2:]
-    # The 32×32 inference grid preserves overlap and reduces DRIVE patches
-    # from 1,387 to 361; evaluated separately from the paper's dense grid.
-    grid = ((padded_size[0] - PATCH_SIZE) // 32 + 1,
-            (padded_size[1] - PATCH_SIZE) // 32 + 1)
+    # Favor a 48-pixel stride on DRIVE; for other padded sizes select the
+    # largest divisor <=48 so the final patch covers the far image edges.
+    def grid_count(length):
+        span = length - PATCH_SIZE
+        stride = next(step for step in range(48, 0, -1) if span % step == 0)
+        return span // stride + 1
+
+    grid = (grid_count(padded_size[0]), grid_count(padded_size[1]))
     patches, stride = extract_patches_with_target_count(image, PATCH_SIZE, grid)
     return patches, padded_size, stride, (height, width)
 
@@ -100,29 +104,37 @@ def gradcam(model: torch.nn.Module, rgb: np.ndarray, device: torch.device):
     patches, padded_size, stride, size = prepare_patches(rgb, device)
     cams = []
     activations = []
-    hook = model.out[-2].register_forward_hook(
-        lambda _module, _inputs, output: activations.append(output)
-    )
+    def isolate_cam_features(_module, _inputs, output):
+        # Stop gradients at the decoder feature map: only the head is needed
+        # for Grad-CAM, so upstream Mamba/encoder graphs need no retention.
+        features = output.detach().requires_grad_(True)
+        activations.append(features)
+        return features
+
+    hook = model.out[-2].register_forward_hook(isolate_cam_features)
     try:
         autocast = (torch.amp.autocast("cuda", dtype=torch.bfloat16)
                     if device.type == "cuda" else nullcontext())
         with torch.enable_grad(), autocast:
             for batch in patches.split(32):
                 activations.clear()
-                prediction = model(batch.detach().requires_grad_(True))
+                prediction = model(batch)
                 features = activations[0]
-                gradient = torch.autograd.grad(prediction.sum(), features)[0]
+                vessels = (prediction.detach() >= EVALUATION_THRESHOLD)
+                gradient = torch.autograd.grad(
+                    (prediction * vessels).sum(), features
+                )[0]
                 weights = gradient.float().mean(dim=(-2, -1), keepdim=True)
                 cam = torch.relu((weights * features.float()).sum(dim=1, keepdim=True))
                 cams.append(cam.detach())
         heat = reconstruct(torch.cat(cams), padded_size, stride, size).float()
-        heat -= heat.min()
-        heat /= heat.max().clamp_min(1e-8)
         values = heat.cpu().numpy()
-        red = np.clip(2 * values, 0, 1)
-        green = np.clip(2 - 2 * np.abs(values - 0.5), 0, 1)
-        blue = np.clip(1 - 2 * values, 0, 1)
-        color = np.stack((red, green, blue), axis=-1)
-        return (0.55 * rgb + 0.45 * (color * 255)).clip(0, 255).astype(np.uint8)
+        fundus = rgb.mean(axis=-1) > 20
+        region = values[fundus] if fundus.any() else values.ravel()
+        low, high = np.percentile(region, (65, 99.5))
+        strength = np.clip((values - low) / max(high - low, 1e-8), 0, 1)
+        alpha = (0.82 * strength ** 1.2 * fundus)[..., None]
+        accent = np.array([10, 174, 245], dtype=np.float32)
+        return ((1 - alpha) * rgb + alpha * accent).clip(0, 255).astype(np.uint8)
     finally:
         hook.remove()
