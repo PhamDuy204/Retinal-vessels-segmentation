@@ -48,13 +48,14 @@ The paper protocol uses 64×64 patches, stride 32, and 500 sampled training patc
 - epochs: **60**
 - learning rate: `0.0018`
 - patch training: 750 sampled 64×64 patches/image in the current sampler, window split
-- DataLoader: 4 workers, pinned memory, persistent workers
+- DataLoader: 0 workers, pinned memory, persistent workers disabled
 - training AMP: **BF16 enabled** (wider dynamic range than FP16)
 - native low-precision GroupNorm feature maps for `our_net`
 - evaluation starts at epoch **50** and uses **BF16**, evaluation batch size 256; Mamba2 remains FP32 under AMP
 - micro-batch size 48
 - fused CUDA Adam enabled
 - cuDNN autotuning / fast nondeterministic CUDA path enabled
+- W&B logging disabled by default
 - TTA disabled by default
 
 Therefore, DRIVE can be started with:
@@ -77,9 +78,9 @@ python train.py \
   --batch_size 4 \
   --epochs 60 \
   --learning_rate 0.0018 \
-  --num-workers 4 \
+  --num-workers 0 \
   --pin-memory \
-  --persistent-workers \
+  --no-persistent-workers \
   --amp \
   --amp-dtype bf16 \
   --amp-native-norm \
@@ -90,7 +91,8 @@ python train.py \
   --eval-batch-size 256 \
   --micro-batch-size 48 \
   --fused-adam \
-  --fast-nondeterministic
+  --fast-nondeterministic \
+  --wandb-mode disabled
 ```
 
 Train on CHASE-DB1 by replacing the dataset with `CHASEDB_1_patches`.
@@ -159,6 +161,7 @@ python run_statistics.py --config configs/statistics.json
 
 ### Weights & Biases (optional)
 
+W&B logging is disabled by default. To upload a run, pass `--wandb-mode online`.
 On the first machine/session that will upload runs to W&B, log in once and paste
 your personal API token when prompted:
 
@@ -174,6 +177,7 @@ To change the W&B project name for a direct training run:
 ```bash
 python train.py \
   --datasets DRIVE_patches \
+  --wandb-mode online \
   --wandb-project My-Retinal-Project
 ```
 
@@ -186,15 +190,8 @@ For `run_statistics.py`, set the project in the JSON config:
 }
 ```
 
-To run without W&B at all:
-
-```bash
-python train.py \
-  --datasets DRIVE_patches \
-  --wandb-mode disabled
-```
-
-or set the statistics config to:
+For direct `train.py` runs, no extra flag is needed to keep W&B disabled.
+For statistics configs, set:
 
 ```json
 {
@@ -202,8 +199,6 @@ or set the statistics config to:
 }
 ```
 
-You may also temporarily disable W&B for a shell/session with
-`WANDB_MODE=disabled`.
 
 ---
 

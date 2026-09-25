@@ -110,11 +110,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--wandb-mode",
         choices=("online", "offline", "disabled"),
-        default=os.environ.get("WANDB_MODE", "online"),
+        default="disabled",
     )
     parser.add_argument("--log-artifacts", action="store_true")
     parser.add_argument("--wandb-watch", action="store_true")
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
@@ -124,7 +124,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--persistent-workers",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Keep DataLoader workers alive between epochs",
     )
     parser.add_argument(

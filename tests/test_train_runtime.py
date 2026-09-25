@@ -8,9 +8,9 @@ def test_optimized_our_net_defaults():
     assert args.loss == "main_loss"
     assert args.epochs == 60
     assert args.learning_rate == 0.0018
-    assert args.num_workers == 4
+    assert args.num_workers == 0
     assert args.pin_memory is True
-    assert args.persistent_workers is True
+    assert args.persistent_workers is False
     assert args.amp is True
     assert args.amp_dtype == "bf16"
     assert args.amp_native_norm is True
@@ -21,6 +21,7 @@ def test_optimized_our_net_defaults():
     assert args.micro_batch_size == 48
     assert args.fast_nondeterministic is True
     assert args.fused_adam is True
+    assert args.wandb_mode == "disabled"
 
 
 def test_optimized_defaults_can_be_switched_to_full_fp32():
@@ -37,6 +38,7 @@ def test_optimized_defaults_can_be_switched_to_full_fp32():
     assert args.eval_amp is False
     assert args.amp_native_norm is False
     assert args.fused_adam is True
+    assert args.wandb_mode == "disabled"
     assert args.fast_nondeterministic is True
 
 
