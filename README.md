@@ -273,11 +273,24 @@ If this code is useful in your research, please cite:
 
 ## Interactive DRIVE inference
 
-Run on the development branch with the exported `safetensors` model or training `.pt` checkpoints (files,
-directories, comma-separated paths, or shell globs) and optional image paths:
+From the repository root, install dependencies and start the demo:
 
 ```bash
+pip install -r requirements.txt
 streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors --image_paths data/DRIVE/test/images
+```
+
+`--` passes the following options to `demo.py` rather than Streamlit:
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--checkpoints` | Yes | One or more `.pt` or `.safetensors` files, directories, comma-separated paths, or globs; choose a model in the UI. |
+| `--image_paths` | No | Images, directories, comma-separated paths, or globs for the image menu; you can always upload an image instead. |
+
+For upload only, omit `--image_paths`:
+
+```bash
+streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors
 ```
 
 Upload PNG/JPEG/TIFF/PPM/BMP/WebP or choose an image path, select a checkpoint,
