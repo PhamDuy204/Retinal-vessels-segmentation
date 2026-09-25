@@ -3,8 +3,10 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from modules import SA, CA, FeatureGroupNorm
-from mamba_ssm import Mamba2
+try:
+    from .modules import SA, CA, FeatureGroupNorm
+except ImportError:
+    from modules import SA, CA, FeatureGroupNorm
 
 def _same_padding(kernel_size, dilation=1):
     k = kernel_size
@@ -237,6 +239,8 @@ class BottleNeck(nn.Module):
 class BottleNeck_2(nn.Module):
     def __init__(self, dimension, d_state=16,d_conv=4,norm_before_gate=True):
         super().__init__()
+        from mamba_ssm import Mamba2
+
         self.rev_pre_norm = get_rmsnorm(dimension)
         self.post_norm = get_rmsnorm(dimension)
 

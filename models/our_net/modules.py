@@ -5,7 +5,6 @@ import os
 import sys
 # from bottle_neck import *
 from typing import Optional
-from mamba_ssm import Mamba2
 
 def _same_padding(kernel_size, dilation=1):
     k = kernel_size

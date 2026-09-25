@@ -18,7 +18,7 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-The default SGMA-Net uses the official `mamba_ssm.Mamba` implementation.
+The default SGMA-Net uses the official `mamba_ssm.Mamba2` implementation on Linux.
 
 Place the datasets under `data/`:
 
@@ -94,6 +94,25 @@ python train.py \
 ```
 
 Train on CHASE-DB1 by replacing the dataset with `CHASEDB_1_patches`.
+
+### Windows model
+
+On Windows, use `our_net_window`. It keeps the SGMA-Net architecture and
+replaces only the Tri Dao Mamba2 block with the pure-PyTorch `mambapy`
+backend, which does not require the Linux-only Mamba CUDA extensions.
+
+`our_net_window` is forced to full FP32 for both training and evaluation
+(`--no-amp --no-eval-amp --amp-dtype fp32`) even if AMP flags are supplied.
+
+```bash
+python train.py --model our_net_window --datasets DRIVE_patches
+```
+
+For a one-epoch validation smoke test:
+
+```bash
+python train.py   --model our_net_window   --datasets DRIVE_patches   --epochs 60   --stop-after-epoch 1   --eval-start-epoch 1   --wandb-mode disabled
+```
 
 Evaluation now uses explicit BF16 (override with `--eval-amp-dtype`).
 The validated 60-epoch configuration keeps Mamba2 in FP32 under AMP and

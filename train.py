@@ -191,6 +191,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--profile-steps", type=int, default=10)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
+    if args.model == "our_net_window":
+        # mambapy is the portable pure-PyTorch backend; keep this model on the
+        # simple, stable full-FP32 path on Windows and other platforms.
+        args.amp = False
+        args.eval_amp = False
+        args.amp_dtype = "fp32"
+        args.amp_native_norm = False
     if args.amp_native_norm is None:
         args.amp_native_norm = (
             args.model == "our_net"

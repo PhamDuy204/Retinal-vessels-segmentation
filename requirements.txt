@@ -14,16 +14,18 @@ wandb
 torchmetrics
 ml-collections
 kornia
+# Pure-PyTorch Mamba backend used by our_net_window (Windows-compatible).
+mambapy==1.2.0
 # Mamba and causal-conv1d contain CUDA extensions. Use the official release
 # wheels matching Torch 2.7, CUDA 12, CXX11 ABI TRUE, Linux x86_64; the plain
 # PyPI requirements often fall back to a source build with the wrong Torch.
-causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl ; python_version == "3.10"
-causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp311-cp311-linux_x86_64.whl ; python_version == "3.11"
-causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; python_version == "3.12"
-causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp313-cp313-linux_x86_64.whl ; python_version == "3.13"
-mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl ; python_version == "3.10"
-mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp311-cp311-linux_x86_64.whl ; python_version == "3.11"
-mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; python_version == "3.12"
-mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp313-cp313-linux_x86_64.whl ; python_version == "3.13"
+causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.10"
+causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp311-cp311-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.11"
+causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.12"
+causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.7cxx11abiTRUE-cp313-cp313-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.13"
+mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.10"
+mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp311-cp311-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.11"
+mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.12"
+mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.5/mamba_ssm-2.2.5%2Bcu12torch2.7cxx11abiTRUE-cp313-cp313-linux_x86_64.whl ; platform_system == "Linux" and python_version == "3.13"
 streamlit
 gdown 
