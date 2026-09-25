@@ -29,10 +29,8 @@ from eval import eval_for_seg
 from load_model import load_loss_class, load_model_class
 from set_up_seed import set_seed
 from statistics_utils import (
-    candidate_is_better,
     is_completed,
     result_directory,
-    selection_key,
     write_json,
 )
 from training_profiler import TrainingProfiler, profile_evaluation
@@ -185,6 +183,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--profile-steps", type=int, default=10)
+    parser.add_argument(
+        "--early-stopping-patience", type=int, default=20,
+        help="Stop after this many epochs without a lower epoch-mean training loss; 0 disables stopping (checkpoint selection still uses training loss).",
+    )
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
     if args.amp_native_norm is None:
@@ -205,6 +207,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--profile-steps must be at least 1")
     if args.stop_after_epoch < 0:
         parser.error("--stop-after-epoch cannot be negative")
+    if args.early_stopping_patience < 0:
+        parser.error("--early-stopping-patience cannot be negative")
     if args.eval_batch_size < 0:
         parser.error("--eval-batch-size cannot be negative")
     if args.eval_every < 1:
@@ -350,6 +354,7 @@ class Trainer:
 
         best_row: dict[str, Any] | None = None
         best_params: dict[str, Any] | None = None
+        epochs_without_improvement = 0
         evaluated_rows: list[dict[str, Any]] = []
         metrics_path = self.run_dir / "epoch_metrics.csv"
         global_train_step = 0
@@ -455,7 +460,7 @@ class Trainer:
 
                 losses = torch.stack(training_loss_values)
                 loss_is_finite = torch.isfinite(losses).all()
-                training_loss_tensor = losses.sum()
+                training_loss_tensor = losses.mean()
                 torch.cuda.synchronize()
                 train_seconds = time.perf_counter() - epoch_start
                 if not bool(loss_is_finite):
@@ -474,6 +479,19 @@ class Trainer:
                 # Preserve the existing scheduler/evaluation order.
                 self.scheduler.step()
                 current_lr = self.optimizer.param_groups[0]["lr"]
+                evaluation_model = ema_model if ema_model is not None else self.model
+                if best_row is None or training_loss < best_row["loss"]:
+                    best_row = {"epoch": epoch, "loss": training_loss,
+                                "lr": current_lr, "train_seconds": train_seconds}
+                    checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
+                    best_params = copy.deepcopy(checkpoint_model.state_dict())
+                    epochs_without_improvement = 0
+                else:
+                    epochs_without_improvement += 1
+                should_stop_early = (
+                    self.args.early_stopping_patience > 0
+                    and epochs_without_improvement >= self.args.early_stopping_patience
+                )
                 should_evaluate = epoch >= self.args.eval_start_epoch and (
                     epoch % self.args.eval_every == 0
                     or epoch == self.args.epochs
@@ -491,9 +509,11 @@ class Trainer:
                         f"Dataset: {self.dataset_name} | "
                         f"Loss: {training_loss:.4f} | evaluation skipped"
                     )
+                    if should_stop_early:
+                        print(f"Early stopping at epoch {epoch}: no lower epoch-mean training loss "
+                              f"for {self.args.early_stopping_patience} epochs.")
+                        break
                     continue
-
-                evaluation_model = ema_model if ema_model is not None else self.model
 
                 def evaluate():
                     return eval_for_seg(
@@ -552,6 +572,8 @@ class Trainer:
                     "epoch_seconds": epoch_seconds,
                 }
                 evaluated_rows.append(dict(row))
+                if best_row["epoch"] == epoch:
+                    best_row = dict(row)
                 writer.writerow(row)
                 metrics_file.flush()
                 self.wandb_run.log(
@@ -591,19 +613,57 @@ class Trainer:
                         self.run_dir / f"epoch_{epoch}.pt",
                     )
 
-                if candidate_is_better(row, best_row):
-                    best_row = dict(row)
-                    checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
-                    best_params = copy.deepcopy(checkpoint_model.state_dict())
-
                 if self.args.stop_after_epoch and epoch >= self.args.stop_after_epoch:
                     print(f"Stopping cleanly after epoch {epoch} by --stop-after-epoch.")
+                    break
+                if should_stop_early:
+                    print(f"Early stopping at epoch {epoch}: no lower epoch-mean training loss "
+                          f"for {self.args.early_stopping_patience} epochs.")
                     break
 
         profiler.finish()
 
         if best_row is None or best_params is None:
-            raise RuntimeError("Training completed without an evaluated epoch")
+            raise RuntimeError("Training completed without a finite training-loss epoch")
+
+        # The lowest-loss epoch can precede --eval-start-epoch. Evaluate that
+        # checkpoint once for selected_result without changing the training loop
+        # or the existing per-epoch validation/AMP configuration.
+        if "acc" not in best_row:
+            checkpoint_model = getattr(evaluation_model, "_orig_mod", evaluation_model)
+            final_params = copy.deepcopy(checkpoint_model.state_dict())
+            try:
+                checkpoint_model.load_state_dict(best_params)
+                eval_start = time.perf_counter()
+                evaluation_result = eval_for_seg(
+                    evaluation_model,
+                    self.val_loader,
+                    self.gpu_id,
+                    self.patch,
+                    self.args.patch_size,
+                    self.args.type_split,
+                    threshold=EVALUATION_THRESHOLD,
+                    non_blocking=True,
+                    amp=self.args.eval_amp,
+                    batch_size=self.args.eval_batch_size,
+                    tta_flips=self.args.eval_tta_flips,
+                    tta_mode=self.args.eval_tta_mode,
+                    channels_last=self.args.channels_last,
+                    auroc_device=self.args.eval_auroc_device,
+                )
+                torch.cuda.synchronize()
+                eval_seconds = time.perf_counter() - eval_start
+            finally:
+                checkpoint_model.load_state_dict(final_params)
+            best_row.update(zip(
+                ("acc", "f1", "iou", "recall", "specificity", "auc", "dice", "cdice"),
+                evaluation_result[:8],
+            ))
+            best_row.update(threshold=EVALUATION_THRESHOLD, eval_seconds=eval_seconds,
+                            epoch_seconds=best_row["train_seconds"] + eval_seconds)
+            evaluated_rows.append(dict(best_row))
+            with metrics_path.open("a", newline="", encoding="utf-8") as metrics_file:
+                csv.DictWriter(metrics_file, fieldnames=EPOCH_FIELDS).writerow(best_row)
 
         checkpoint_path = self.run_dir / "best.pt"
         torch.save(
@@ -614,7 +674,7 @@ class Trainer:
                 "dataset": self.dataset_name,
                 "seed": self.args.seed,
                 "selected_epoch": int(best_row["epoch"]),
-                "selection_key": selection_key(best_row),
+                "selection_key": (best_row["loss"],),
             },
             checkpoint_path,
         )
@@ -625,7 +685,7 @@ class Trainer:
             "dataset": self.dataset_name,
             "seed": self.args.seed,
             "selected_epoch": int(best_row["epoch"]),
-            "selection_key": list(selection_key(best_row)),
+            "selection_key": [best_row["loss"]],
             "wandb_run_id": getattr(self.wandb_run, "id", None),
             "wandb_run_url": getattr(self.wandb_run, "url", None),
             **{field: best_row[field] for field in EPOCH_FIELDS if field != "epoch"},
@@ -637,7 +697,7 @@ class Trainer:
             "selected_epoch": selected_result["selected_epoch"],
             "best_epoch": selected_result["selected_epoch"],
             "best_selection_key": selected_result["selection_key"],
-            "best_selection_rule": "lexicographic(AUC, Recall, F1, cDice)",
+            "best_selection_rule": "min(epoch_mean_training_loss)",
             **{f"selected_{metric}": selected_result[metric] for metric in EPOCH_FIELDS[1:]},
             **{f"best_{metric}": selected_result[metric] for metric in EPOCH_FIELDS[1:]},
         }
@@ -725,6 +785,7 @@ def wandb_config(
         "compile_model": args.compile_model,
         "fused_adam": args.fused_adam,
         "stop_after_epoch": args.stop_after_epoch,
+        "early_stopping_patience": args.early_stopping_patience,
     }
 
 

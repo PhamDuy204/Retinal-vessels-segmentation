@@ -1,3 +1,5 @@
+import pytest
+
 from train import parse_args
 
 
@@ -7,6 +9,7 @@ def test_optimized_our_net_defaults():
     assert args.model == "our_net"
     assert args.loss == "main_loss"
     assert args.epochs == 100
+    assert args.early_stopping_patience == 20
     assert args.learning_rate == 0.0018
     assert args.num_workers == 4
     assert args.pin_memory is True
@@ -68,3 +71,12 @@ def test_main_loss_is_loadable_by_canonical_name():
     from load_model import load_loss_class
 
     assert load_loss_class("main_loss").__name__ == "MainLoss"
+
+
+def test_early_stopping_can_be_disabled_and_rejects_negative_patience():
+    args = parse_args([
+        "--experiment-id", "test-disabled", "--early-stopping-patience", "0",
+    ])
+    assert args.early_stopping_patience == 0
+    with pytest.raises(SystemExit):
+        parse_args(["--experiment-id", "test-negative", "--early-stopping-patience", "-1"])
