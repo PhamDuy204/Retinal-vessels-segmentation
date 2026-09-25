@@ -79,7 +79,7 @@ def generate_experiment_id(output_root: str | os.PathLike[str]) -> str:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train retinal vessel segmentation models")
     parser.add_argument("-b", "--batch_size", type=int, default=4)
-    parser.add_argument("-e", "--epochs", type=int, default=100)
+    parser.add_argument("-e", "--epochs", type=int, default=60)
     parser.add_argument("-lf", "--loss", type=str, default="main_loss")
     parser.add_argument("-m", "--model", type=str, default="our_net")
     parser.add_argument("--model-width", type=int, default=0, help="Optional width/channels override for models that accept a width argument")
@@ -155,7 +155,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--eval-batch-size", type=int, default=256)
     parser.add_argument("--eval-auroc-device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--eval-every", type=int, default=1)
-    parser.add_argument("--eval-start-epoch", type=int, default=1)
+    parser.add_argument("--eval-start-epoch", type=int, default=50)
     parser.add_argument("--eval-tta-flips", action="store_true")
     parser.add_argument("--eval-tta-mode", choices=("none", "flips", "d4"), default="none")
     parser.add_argument("--ema-decay", type=float, default=0.0)

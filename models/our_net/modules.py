@@ -288,8 +288,9 @@ class DWConv(nn.Module):
         return  self.act(self.gn(self.merge(torch.cat((x_0,x),1))))
 
 class MAB(nn.Module):
-    def __init__(self, in_channels,in_size=(64, 64)):
+    def __init__(self, in_channels,in_size=(64, 64), bf16_fp32=False):
         super().__init__()
+        self.bf16_fp32 = bf16_fp32
         self.first_conv= DWConv(in_channels)
         h,w= in_size
         self.branch_0_0 = DWConv(h,dilation=1)
@@ -332,10 +333,11 @@ class MAB(nn.Module):
 
         merged=self.merge(torch.cat((b0_0,b0_1,b0_2,b1_0,b1_1,b1_2,b2_0,b2_1,b2_2),1))
 
-        # The multiplicative MAB path can exceed FP16's finite range even when
-        # both operands are finite. Keep BF16/FP32 unchanged, but compute the
-        # proven-sensitive product/statistics/gating region in FP32 for FP16.
-        if x.dtype == torch.float16:
+        # The multiplicative/statistics path is precision-sensitive. FP16 can
+        # overflow here outright, and long BF16 runs can still become unstable
+        # through the product + reduction + gating backward path. Keep only this
+        # small region in FP32 and return to the incoming AMP dtype afterward.
+        if x.dtype == torch.float16 or (x.dtype == torch.bfloat16 and self.bf16_fp32):
             with torch.amp.autocast(x.device.type, enabled=False):
                 m = merged.float() * x.float()
                 avg_m = m.mean(1, keepdim=True)

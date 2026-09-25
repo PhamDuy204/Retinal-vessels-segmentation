@@ -13,7 +13,7 @@ class SegModel(nn.Module):
         self.down_0=down_sampling(in_channels,32,(64,64)) #B,64,32,32
         self.down_1=down_sampling(32,32,(32,32)) #B,128,16,16
         self.down_2=down_sampling(32,32,(16,16))#B,256,8,8
-        self.bneck=nn.Sequential(CAB_1(32),BottleNeck_2(32),MAB(32,(8,8)),CAB(32))
+        self.bneck=nn.Sequential(CAB_1(32),BottleNeck_2(32),MAB(32,(8,8),bf16_fp32=True),CAB(32))
         self.up_0=up_sampling(32,32,32,(16,16)) #B,64,32,32
         self.up_1=up_sampling(32,32,32,(32,32)) #B,128,16,16
         

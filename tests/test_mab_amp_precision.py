@@ -29,8 +29,8 @@ class _ScaledGate(nn.Module):
         return torch.full((b, 32, h, w), self.scale, device=x.device, dtype=x.dtype)
 
 
-def _make_lightweight_mab():
-    block = MAB(32, (8, 8)).cuda().eval()
+def _make_lightweight_mab(*, bf16_fp32=False):
+    block = MAB(32, (8, 8), bf16_fp32=bf16_fp32).cuda().eval()
     block.first_conv = nn.Identity()
     for name in (
         "branch_0_0", "branch_0_1", "branch_0_2",
@@ -65,9 +65,21 @@ def test_mab_promotes_overflow_sensitive_fp16_statistics_to_fp32():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA AMP required")
-def test_mab_keeps_bf16_statistics_native():
-    block, gate = _make_lightweight_mab()
+def test_mab_promotes_bf16_sensitive_statistics_to_fp32_when_enabled():
+    block, gate = _make_lightweight_mab(bf16_fp32=True)
     x = torch.full((2, 32, 8, 8), 5000.0, device="cuda", dtype=torch.bfloat16)
+
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+        output = block(x)
+
+    assert gate.seen_dtype == torch.float32
+    assert output.dtype == torch.bfloat16
+    assert torch.isfinite(output).all()
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA AMP required")
+def test_mab_keeps_decoder_bf16_statistics_native_by_default():
+    block, gate = _make_lightweight_mab()
+    x = torch.full((2, 32, 8, 8), 5.0, device="cuda", dtype=torch.bfloat16)
 
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
         output = block(x)
