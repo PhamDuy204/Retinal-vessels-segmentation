@@ -35,7 +35,7 @@ A retinal imaging workbench: quiet cool surfaces, a pale image canvas, and clear
 
 ### Product context and register
 
-- Audience: researchers inspecting SGMA-Net DRIVE checkpoints.
+- Audience: researchers testing SGMA-Net DRIVE inference, with optional trained checkpoints.
 - Register: one-screen product utility in English.
 - Signature: the prediction canvas changes in place to a green-on-black mask and then a green Grad-CAM overlay.
 - Runtime mapping: Streamlit light theme lives in `.streamlit/config.toml`; preview CSS variables and component rules live in `demo.py`. Streamlit owns native select, upload, and button behavior.
@@ -50,7 +50,7 @@ Georgia marks the tool title and section headings. System sans is used for contr
 
 ## Layout
 
-Two equal columns (source and output) on desktop; Streamlit stacks them on narrow screens. Source and result use the same 565:584 preview aspect ratio so choosing an image does not shift the controls unexpectedly. Upload sits beneath the source image.
+Two equal columns (source and output) on desktop; Streamlit stacks them on narrow screens. Source and result use the same 565:584 preview aspect ratio so choosing an image does not shift the controls unexpectedly. Upload sits beneath the source image. The model menu appears when launch options include checkpoints; otherwise the model input is a checkpoint upload button. The unweighted state clearly labels its random output.
 
 ## Elevation & Depth
 

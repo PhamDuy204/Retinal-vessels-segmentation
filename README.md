@@ -273,34 +273,39 @@ If this code is useful in your research, please cite:
 
 ## Interactive DRIVE inference
 
-From the repository root, install dependencies and start the demo:
+The demo supports only **`our_net`** (Linux) and **`our_net_window`** (Windows).
+The variants use different Mamba implementations, so their checkpoints are not interchangeable.
+From the repository root:
 
 ```bash
 pip install -r requirements.txt
-streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors --image_paths data/DRIVE/test/images
+streamlit run demo.py -- --os linux --checkpoints inference_models/drive_epoch58.safetensors --image_paths data/DRIVE/test/images
 ```
 
 `--` passes the following options to `demo.py` rather than Streamlit:
 
 | Option | Required | Meaning |
 | --- | --- | --- |
-| `--checkpoints` | Yes | One or more `.pt` or `.safetensors` files, directories, comma-separated paths, or globs; choose a model in the UI. |
+| `--os` | No | `linux` selects `our_net`; `win` selects `our_net_window`. Defaults to the current operating system; override it to try either architecture where its dependencies work. |
+| `--checkpoints` | No | One or more compatible `.pt` or `.safetensors` files, directories, comma-separated paths, or globs for the model menu. |
 | `--image_paths` | No | Images, directories, comma-separated paths, or globs for the image menu; you can always upload an image instead. |
 
-For upload only, omit `--image_paths`:
+Without `--checkpoints`, the model selector becomes a checkpoint upload button:
 
 ```bash
-streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors
+streamlit run demo.py -- --os win --image_paths data/DRIVE/test/images
 ```
 
-Upload PNG/JPEG/TIFF/PPM/BMP/WebP or choose an image path, select a checkpoint,
+A missing checkpoint uses randomly initialized weights: the output mask is only a pipeline test, **not a valid vessel prediction**. Incompatible or corrupt uploads show an error and require a different checkpoint. Uploaded `.pt` files must contain `model_state_dict`; `.safetensors` files must contain weights matching the architecture selected by `--os`.
+
+Upload PNG/JPEG/TIFF/PPM/BMP/WebP or choose an image path, optionally select or upload a checkpoint,
 then press **Predict**. The right panel shows a binary mask (0 background, 1 vessel);
 the arrow toggles a vessel-focused Grad-CAM overlay on the original image;
 the arrow reverses direction to return to the mask. The mask preview uses green vessels on a black background; Grad-CAM highlights
 vessels in green on the original image and runs only when requested. Downloaded mask PNG contains literal pixel values 0/1.
 
 The UI loads `.pt` state dicts with `weights_only=True` and supports exported
-`our_net` `.safetensors` weights. Export other `.pt` checkpoints with
+`our_net` and `our_net_window` `.safetensors` weights. Export other `our_net` `.pt` checkpoints with
 `python convert_checkpoint.py path/to/best.pt --output inference_models/model.safetensors`.
 The shipped epoch 58 safetensors weights match the `.pt` tensors exactly.
 The Mamba2 CUDA kernels would require custom ONNX operators or a slower scan implementation;
