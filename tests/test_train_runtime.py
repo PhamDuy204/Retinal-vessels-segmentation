@@ -1,3 +1,5 @@
+import pytest
+
 from train import parse_args
 
 
@@ -7,6 +9,7 @@ def test_optimized_our_net_defaults():
     assert args.model == "our_net"
     assert args.loss == "main_loss"
     assert args.epochs == 60
+    assert args.early_stopping_patience == 20
     assert args.learning_rate == 0.0018
     assert args.num_workers == 0
     assert args.pin_memory is True
@@ -88,3 +91,12 @@ def test_our_net_window_forces_full_fp32():
     assert args.eval_amp is False
     assert args.amp_dtype == "fp32"
     assert args.amp_native_norm is False
+
+
+def test_early_stopping_can_be_disabled_and_rejects_negative_patience():
+    args = parse_args([
+        "--experiment-id", "test-disabled", "--early-stopping-patience", "0",
+    ])
+    assert args.early_stopping_patience == 0
+    with pytest.raises(SystemExit):
+        parse_args(["--experiment-id", "test-negative", "--early-stopping-patience", "-1"])

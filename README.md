@@ -45,7 +45,8 @@ The paper protocol uses 64×64 patches, stride 32, and 500 sampled training patc
 
 - model: `our_net`
 - loss: `main_loss`
-- epochs: **60**
+- epochs: **60** (or stop after 20 consecutive epochs without a lower epoch-mean training loss)
+- checkpoint: `best.pt` is the epoch with the lowest mean training loss
 - learning rate: `0.0018`
 - patch training: 750 sampled 64×64 patches/image in the current sampler, window split
 - DataLoader: 0 workers, pinned memory, persistent workers disabled
@@ -77,6 +78,7 @@ python train.py \
   --patch_size 64 \
   --batch_size 4 \
   --epochs 60 \
+  --early-stopping-patience 20 \
   --learning_rate 0.0018 \
   --num-workers 0 \
   --pin-memory \
@@ -94,6 +96,8 @@ python train.py \
   --fast-nondeterministic \
   --wandb-mode disabled
 ```
+
+`--early-stopping-patience 20` is the default; set it to `0` to train through all epochs. Checkpoint selection still uses the minimum mean training loss when early stopping is disabled. If the selected epoch precedes `--eval-start-epoch`, it is evaluated once at the end using the existing BF16 evaluation settings. The AMP configuration and forward/backward path are unchanged.
 
 Train on CHASE-DB1 by replacing the dataset with `CHASEDB_1_patches`.
 
