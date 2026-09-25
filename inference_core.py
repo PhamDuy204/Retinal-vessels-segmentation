@@ -41,24 +41,40 @@ def read_image(source: str | Path | BytesIO) -> np.ndarray:
         return np.asarray(ImageOps.exif_transpose(image).convert("RGB"))
 
 
-def load_checkpoint(path: str | Path, device: torch.device) -> torch.nn.Module:
-    """Load state dicts only. Pickled model objects are intentionally unsupported."""
-    if Path(path).suffix.lower() == ".safetensors":
-        from safetensors import safe_open
-        with safe_open(path, framework="pt", device="cpu") as file:
-            metadata = file.metadata() or {}
-            checkpoint = {"model": metadata.get("model", "our_net"),
-                          "model_state_dict": {key: file.get_tensor(key) for key in file.keys()}}
-    else:
-        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
-        raise ValueError("Expected a training checkpoint containing model_state_dict.")
-    name = checkpoint.get("model", "our_net")
-    if name != "our_net":
-        raise ValueError(f"Checkpoint model {name!r} is unsupported by this DRIVE infer view.")
-    model = load_model_class(name)(1, 1)
-    model.load_state_dict(checkpoint["model_state_dict"], strict=True)
-    if device.type == "cpu":
+def load_checkpoint(path: str | Path | None, device: torch.device,
+                    model_name: str = "our_net", data: bytes | None = None) -> torch.nn.Module:
+    """Load a matching checkpoint, or initialize the selected model without weights."""
+    if model_name not in ("our_net", "our_net_window"):
+        raise ValueError(f"Unsupported model: {model_name!r}.")
+    if path is not None:
+        if Path(path).suffix.lower() == ".safetensors":
+            from safetensors import safe_open
+            from tempfile import TemporaryDirectory
+            with TemporaryDirectory() if data is not None else nullcontext() as directory:
+                source = Path(directory) / "upload.safetensors" if directory else path
+                if data is not None:
+                    source.write_bytes(data)
+                with safe_open(source, framework="pt", device="cpu") as file:
+                    metadata = file.metadata() or {}
+                    checkpoint = {"model": metadata.get("model", model_name),
+                                  "model_state_dict": {key: file.get_tensor(key) for key in file.keys()}}
+        elif Path(path).suffix.lower() == ".pt":
+            checkpoint = torch.load(BytesIO(data) if data is not None else path,
+                                    map_location="cpu", weights_only=True)
+        else:
+            raise ValueError("Checkpoint must be a .pt or .safetensors file.")
+        if not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("model_state_dict"), dict):
+            raise ValueError("Expected a training checkpoint containing model_state_dict.")
+        name = checkpoint.get("model", model_name)
+        if name != model_name:
+            raise ValueError(f"Checkpoint uses {name!r}; --os selected {model_name!r}.")
+    model = load_model_class(model_name)(1, 1)
+    if path is not None:
+        try:
+            model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+        except RuntimeError as exc:
+            raise ValueError(f"Checkpoint weights do not match {model_name}: {exc}") from exc
+    if device.type == "cpu" and model_name == "our_net":
         from types import MethodType
         from cpu_mamba2 import mamba2_cpu_forward
         mamba = model.bneck[1].mamba

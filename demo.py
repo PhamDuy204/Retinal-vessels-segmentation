@@ -35,21 +35,31 @@ def paths(values, suffixes):
 
 def options():
     parser = argparse.ArgumentParser(description="Retinal vessel inference UI")
-    parser.add_argument("--checkpoints", nargs="+", required=True,
-                        help="One or more .pt/.safetensors checkpoints, directories, or globs.")
+    parser.add_argument("--checkpoints", nargs="*", default=[],
+                        help="Optional .pt/.safetensors files, directories, or globs.")
+    parser.add_argument("--os", choices=("win", "linux"),
+                        default="linux",
+                        help="Model architecture: win=our_net_window, linux=our_net (default).")
     parser.add_argument("--image_paths", nargs="*", default=[],
                         help="Optional images, directories, or globs for the image menu.")
     argv = sys.argv[1:]
     arguments = parser.parse_args(argv[1:] if argv[:1] == ["--"] else argv)
     checkpoints = paths(arguments.checkpoints, {".pt", ".safetensors"})
-    if not checkpoints:
-        parser.error("--checkpoints must contain a .pt or .safetensors checkpoint")
-    return checkpoints, paths(arguments.image_paths, IMAGE_EXTENSIONS)
+    if arguments.checkpoints and not checkpoints:
+        parser.error("--checkpoints did not contain any .pt or .safetensors files")
+    model_name = "our_net_window" if arguments.os == "win" else "our_net"
+    return checkpoints, paths(arguments.image_paths, IMAGE_EXTENSIONS), model_name
 
 
 @st.cache_resource(show_spinner="Loading checkpoint…")
-def cached_model(path, mtime_ns, device_name):
-    return load_checkpoint(path, torch.device(device_name))
+def cached_model(path, mtime_ns, device_name, model_name, contents=None):
+    return load_checkpoint(path, torch.device(device_name), model_name, contents)
+
+
+@st.cache_data(show_spinner="Checking checkpoint…")
+def check_checkpoint(path, mtime_ns, model_name, contents=None):
+    load_checkpoint(path, torch.device("cpu"), model_name, contents)
+    return True
 
 
 def png_bytes(array):
@@ -102,12 +112,12 @@ div.stButton > button:focus-visible, div.stSelectbox:focus-within {
 
 st.markdown('<div class="small-label">RETINAL IMAGING / DRIVE</div>', unsafe_allow_html=True)
 st.title("Vessel viewer")
-st.caption("Select a fundus image, choose a checkpoint, and inspect the vessel mask.")
+st.caption("Select a fundus image and inspect the vessel mask. A checkpoint is optional.")
 
 try:
-    checkpoints, image_paths = options()
+    checkpoints, image_paths, model_name = options()
 except SystemExit:
-    st.error("Start with: streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors")
+    st.error("Invalid launch options. Example: streamlit run demo.py -- --os linux")
     st.stop()
 
 left, right = st.columns(2, gap="large")
@@ -143,14 +153,40 @@ with left:
     st.selectbox("Image path", ["Choose an image…"] + [str(p) for p in image_paths],
                  key="image_selector", disabled=uploaded is not None,
                  help="Choose a path when no upload is active.")
-    selected_checkpoint = st.selectbox("Model checkpoint", checkpoints,
-                                       format_func=lambda p: f"{p.parent.name} / {p.name}")
+    selected_checkpoint = (st.selectbox(
+        "Model checkpoint", [None, *checkpoints], index=1,
+        format_func=lambda p: f"{p.parent.name} / {p.name}" if p else "Upload checkpoint / no weights",
+    ) if checkpoints else None)
+    checkpoint_upload = (st.file_uploader("Upload checkpoint (optional)",
+                                          type=["pt", "safetensors"], key="checkpoint_upload")
+                         if selected_checkpoint is None else None)
+    checkpoint_error = None
+    checkpoint_name = selected_checkpoint
+    checkpoint_bytes = None
+    if checkpoint_upload is not None:
+        checkpoint_name = checkpoint_upload.name
+        checkpoint_bytes = checkpoint_upload.getvalue()
+        try:
+            check_checkpoint(checkpoint_name, None, model_name, checkpoint_bytes)
+        except Exception as exc:
+            checkpoint_error = str(exc).splitlines()[0].rstrip(".")
+            st.error(f"Invalid checkpoint for {model_name}: {checkpoint_error}. Upload another checkpoint.")
+    elif selected_checkpoint is None:
+        st.caption(f"No checkpoint: {model_name} uses randomly initialized weights; the mask is not meaningful.")
+    else:
+        try:
+            check_checkpoint(str(selected_checkpoint), selected_checkpoint.stat().st_mtime_ns, model_name)
+        except Exception as exc:
+            checkpoint_error = str(exc).splitlines()[0].rstrip(".")
+            st.error(f"Invalid checkpoint for {model_name}: {checkpoint_error}. Select or upload another checkpoint.")
 
 with right:
     label, arrow = st.columns([8, 1])
     with label:
         st.subheader("Prediction")
-    active_key = (source_key, str(selected_checkpoint), selected_checkpoint.stat().st_mtime_ns)
+    checkpoint_mtime = selected_checkpoint.stat().st_mtime_ns if selected_checkpoint else None
+    active_key = (source_key, model_name, str(checkpoint_name), checkpoint_mtime,
+                  hashlib.sha256(checkpoint_bytes).hexdigest() if checkpoint_bytes else None)
     current = st.session_state.get("result")
     if current is None or current["key"] != active_key:
         current = None
@@ -183,14 +219,15 @@ with right:
     st.markdown('<div class="warmup-note" role="note">The first prediction loads the model and warms up CUDA when available. Later GPU predictions are faster.</div>',
                 unsafe_allow_html=True)
     st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
-    if st.button("Predict", type="primary", width="stretch", disabled=rgb is None):
+    if st.button("Predict", type="primary", width="stretch",
+                 disabled=rgb is None or checkpoint_error is not None):
         device = select_device()
         if device.type == "cpu":
             torch.set_num_threads(2)
         try:
             with st.spinner("Segmenting retinal vessels…"):
-                model = cached_model(str(selected_checkpoint), selected_checkpoint.stat().st_mtime_ns,
-                                     str(device))
+                model = cached_model(str(checkpoint_name) if checkpoint_name else None,
+                                     checkpoint_mtime, str(device), model_name, checkpoint_bytes)
                 mask, seconds = predict(model, rgb, device)
             st.session_state["result"] = dict(key=active_key, model=model, rgb=rgb,
                                                device=device, mask=mask, seconds=seconds)
@@ -199,6 +236,7 @@ with right:
         except Exception as exc:
             st.error(f"Prediction failed: {exc}")
     if current is not None:
-        st.caption(f"Inference: {current['seconds']:.3f}s · {current['device'].type.upper()}")
+        st.caption(f"Inference: {current['seconds']:.3f}s · {current['device'].type.upper()} · "
+                   f"{model_name}{' (random weights)' if checkpoint_name is None else ''}")
         st.download_button("Download 0/1 mask (PNG)", png_bytes(current["mask"]),
                            file_name="vessel_mask_0_1.png", mime="image/png")
