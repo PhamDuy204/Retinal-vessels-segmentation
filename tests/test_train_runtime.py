@@ -70,3 +70,19 @@ def test_main_loss_is_loadable_by_canonical_name():
     from load_model import load_loss_class
 
     assert load_loss_class("main_loss").__name__ == "MainLoss"
+
+
+def test_our_net_window_forces_full_fp32():
+    args = parse_args([
+        "--experiment-id", "test-window",
+        "--model", "our_net_window",
+        "--amp",
+        "--amp-dtype", "fp16",
+        "--eval-amp",
+    ])
+
+    assert args.model == "our_net_window"
+    assert args.amp is False
+    assert args.eval_amp is False
+    assert args.amp_dtype == "fp32"
+    assert args.amp_native_norm is False
