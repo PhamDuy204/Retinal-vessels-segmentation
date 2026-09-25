@@ -38,8 +38,8 @@ def options():
     parser.add_argument("--checkpoints", nargs="*", default=[],
                         help="Optional .pt/.safetensors files, directories, or globs.")
     parser.add_argument("--os", choices=("win", "linux"),
-                        default="win" if sys.platform.startswith("win") else "linux",
-                        help="Model architecture: win=our_net_window, linux=our_net.")
+                        default="linux",
+                        help="Model architecture: win=our_net_window, linux=our_net (default).")
     parser.add_argument("--image_paths", nargs="*", default=[],
                         help="Optional images, directories, or globs for the image menu.")
     argv = sys.argv[1:]

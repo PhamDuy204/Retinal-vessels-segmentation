@@ -274,19 +274,19 @@ If this code is useful in your research, please cite:
 ## Interactive DRIVE inference
 
 The demo supports only **`our_net`** (Linux) and **`our_net_window`** (Windows).
-The variants use different Mamba implementations, so their checkpoints are not interchangeable.
+The variants use different Mamba implementations, so their checkpoints are not interchangeable. The default is `our_net` (`--os linux`) even on Windows.
 From the repository root:
 
 ```bash
 pip install -r requirements.txt
-streamlit run demo.py -- --os linux --checkpoints inference_models/drive_epoch58.safetensors --image_paths data/DRIVE/test/images
+streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors --image_paths data/DRIVE/test/images
 ```
 
 `--` passes the following options to `demo.py` rather than Streamlit:
 
 | Option | Required | Meaning |
 | --- | --- | --- |
-| `--os` | No | `linux` selects `our_net`; `win` selects `our_net_window`. Defaults to the current operating system; override it to try either architecture where its dependencies work. |
+| `--os` | No | `linux` selects `our_net`; `win` selects `our_net_window`. Defaults to `linux` on every operating system; pass `--os win` for `our_net_window`. |
 | `--checkpoints` | No | One or more compatible `.pt` or `.safetensors` files, directories, comma-separated paths, or globs for the model menu. |
 | `--image_paths` | No | Images, directories, comma-separated paths, or globs for the image menu; you can always upload an image instead. |
 
