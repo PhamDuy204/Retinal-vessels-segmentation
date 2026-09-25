@@ -270,3 +270,49 @@ If this code is useful in your research, please cite:
   doi     = {10.1016/j.eswa.2026.134242}
 }
 ```
+
+## Interactive DRIVE inference
+
+From the repository root, install dependencies and start the demo:
+
+```bash
+pip install -r requirements.txt
+streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors --image_paths data/DRIVE/test/images
+```
+
+`--` passes the following options to `demo.py` rather than Streamlit:
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--checkpoints` | Yes | One or more `.pt` or `.safetensors` files, directories, comma-separated paths, or globs; choose a model in the UI. |
+| `--image_paths` | No | Images, directories, comma-separated paths, or globs for the image menu; you can always upload an image instead. |
+
+For upload only, omit `--image_paths`:
+
+```bash
+streamlit run demo.py -- --checkpoints inference_models/drive_epoch58.safetensors
+```
+
+Upload PNG/JPEG/TIFF/PPM/BMP/WebP or choose an image path, select a checkpoint,
+then press **Predict**. The right panel shows a binary mask (0 background, 1 vessel);
+the arrow toggles a vessel-focused Grad-CAM overlay on the original image;
+the arrow reverses direction to return to the mask. The mask preview uses green vessels on a black background; Grad-CAM highlights
+vessels in green on the original image and runs only when requested. Downloaded mask PNG contains literal pixel values 0/1.
+
+The UI loads `.pt` state dicts with `weights_only=True` and supports exported
+`our_net` `.safetensors` weights. Export other `.pt` checkpoints with
+`python convert_checkpoint.py path/to/best.pt --output inference_models/model.safetensors`.
+The shipped epoch 58 safetensors weights match the `.pt` tensors exactly.
+The Mamba2 CUDA kernels would require custom ONNX operators or a slower scan implementation;
+changing to safetensors improves weight portability but does not speed up the model forward. On the RTX 3060,
+a warmed DRIVE 584×565 inference with a 48×48 overlapping patch grid took
+~0.35–0.38 seconds end to end (first prediction is slower for CUDA warmup).
+The 48×48 grid covers DRIVE with 169 patches; other image sizes choose a
+slightly denser stride where needed so every edge has coverage. Across all
+20 DRIVE test images, per-image F1 versus the previous 32×32 UI grid changed
+by -0.0030 to +0.0038; the pixel disagreement was 0.43–0.56%. This UI speed
+mode is for interactive viewing; paper evaluation still uses the denser 32×8 grid.
+
+The UI automatically selects CUDA when an available GPU initializes and uses CPU otherwise. A note under the result explains the slower first prediction. CPU fallback uses a reference Mamba2 scan with the same checkpoint weights:
+it is functional but took ~23 seconds per DRIVE image with the new grid on the tested machine.
+The <0.4 second target is achieved on the RTX 3060 after warmup, not CPU.
